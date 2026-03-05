@@ -1,0 +1,11 @@
+services:
+  lastboard-agent:
+    image: ghcr.io/codigosh/lastboard-agent:latest
+    container_name: lastboard-agent
+    ports:
+      - "2377:2377"
+    environment:
+      - TOKEN=change-this-to-a-secret-token
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
