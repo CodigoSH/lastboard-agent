@@ -49,11 +49,10 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	// All Docker API routes — require auth
+	// Catch-all: forward every path to Docker as-is — version is client-controlled.
+	// /health is registered first so it takes priority without auth.
 	dockerHandler := authMiddleware(token, dockerMiddleware(socketPath, http.HandlerFunc(proxyHandler)))
-
-	mux.Handle("/v1.41/containers/json", dockerHandler)
-	mux.Handle("/v1.41/containers/", dockerHandler)
+	mux.Handle("/", dockerHandler)
 
 	srv := &http.Server{
 		Addr:         "0.0.0.0:" + port,
