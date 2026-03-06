@@ -65,7 +65,7 @@ func main() {
 	mux.Handle("/{path...}", dockerHandler)
 
 	srv := &http.Server{
-		Addr:              "0.0.0.0:" + port,
+		Addr:              ":" + port,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
