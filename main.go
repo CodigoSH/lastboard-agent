@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
-	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -49,17 +50,27 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+	// Create a single shared ReverseProxy to safely stream to the Docker socket
+	targetURL, _ := url.Parse("http://docker")
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy.Transport = &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		},
+	}
+
 	// Catch-all: forward every path to Docker as-is — version is client-controlled.
 	// /health is registered first so it takes priority without auth.
-	dockerHandler := authMiddleware(token, dockerMiddleware(socketPath, http.HandlerFunc(proxyHandler)))
+	dockerHandler := authMiddleware(token, proxy)
 	mux.Handle("/{path...}", dockerHandler)
 
 	srv := &http.Server{
-		Addr:         "0.0.0.0:" + port,
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:              "0.0.0.0:" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// We DO NOT set ReadTimeout and WriteTimeout because they break
+		// long-running streaming connections like Docker stats/events.
 	}
 
 	log.Fatal(srv.ListenAndServe())
@@ -88,84 +99,7 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 	})
 }
 
-// dockerMiddleware creates an http.Client connected to the Docker Unix socket
-// and attaches it and the base URL to the request context.
-func dockerMiddleware(socketPath string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		transport := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
-			},
-		}
-
-		client := &http.Client{
-			Transport: transport,
-			Timeout:   60 * time.Second,
-		}
-
-		ctx := context.WithValue(r.Context(), contextKeyDockerClient, client)
-		ctx = context.WithValue(ctx, contextKeyDockerBaseURL, "http://docker")
-
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-// proxyHandler forwards the request to the Docker socket and copies the
-// response back to the client unchanged.
-func proxyHandler(w http.ResponseWriter, r *http.Request) {
-	client := r.Context().Value(contextKeyDockerClient).(*http.Client)
-	baseURL := r.Context().Value(contextKeyDockerBaseURL).(string)
-
-	// Build the target URL: base + path + query string
-	targetURL := baseURL + r.URL.Path
-	if r.URL.RawQuery != "" {
-		targetURL += "?" + r.URL.RawQuery
-	}
-
-	// Create the outgoing request, forwarding method, body, and headers
-	var body io.Reader
-	if r.Body != nil {
-		body = r.Body
-		defer r.Body.Close()
-	}
-
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, body)
-	if err != nil {
-		http.Error(w, "failed to create upstream request", http.StatusInternalServerError)
-		return
-	}
-	req.Host = "localhost"
-
-	// Forward relevant request headers
-	for key, values := range r.Header {
-		// Skip hop-by-hop headers
-		switch strings.ToLower(key) {
-		case "authorization", "connection", "te", "trailers", "transfer-encoding", "upgrade":
-			continue
-		}
-		for _, v := range values {
-			req.Header.Add(key, v)
-		}
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		http.Error(w, "upstream Docker request failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-
-	// Copy response headers
-	for key, values := range resp.Header {
-		for _, v := range values {
-			w.Header().Add(key, v)
-		}
-	}
-
-	// Copy status code and body
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
-}
+// _ Removed dockerMiddleware and proxyHandler since httputil.ReverseProxy handles streaming gracefully
 
 // writeJSONError writes a JSON error response.
 func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
