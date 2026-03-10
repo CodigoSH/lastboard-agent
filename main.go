@@ -30,7 +30,7 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "2377"
+		port = "2375"
 	}
 
 	socketPath := os.Getenv("SOCKET_PATH")
