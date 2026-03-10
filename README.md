@@ -29,7 +29,7 @@ No database. No config files. Restart or replace it at any time — it's fully s
 ## Requirements
 
 - Docker installed on the remote host
-- Port `2377` reachable from the Lastboard host (or any custom port you configure)
+- Port `2375` reachable from the Lastboard host (or any custom port you configure)
 
 ---
 
@@ -45,7 +45,7 @@ services:
     image: ghcr.io/codigosh/lastboard-agent:latest
     container_name: lastboard-agent
     ports:
-      - "2377:2377"
+      - "2375:2375"
     environment:
       - TOKEN=change-this-to-a-secret-token
     volumes:
@@ -59,7 +59,7 @@ Three things to know before running:
   ```bash
   openssl rand -hex 32
   ```
-- **`ports`** — change `2377:2377` if you need a different port. The right side must match `PORT` if you override it.
+- **`ports`** — change `2375:2375` if you need a different port. The right side must match `PORT` if you override it.
 - **`volumes`** — `/var/run/docker.sock` must not be changed. This gives the agent access to the local Docker daemon.
 
 Then start it:
@@ -75,7 +75,7 @@ docker run -d \
   --name lastboard-agent \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -e TOKEN=your-secret-token \
-  -p 2377:2377 \
+  -p 2375:2375 \
   --restart unless-stopped \
   ghcr.io/codigosh/lastboard-agent:latest
 ```
@@ -88,7 +88,7 @@ docker run -d \
 2. Add a **Docker** widget, or open the settings of an existing one
 3. Click **Add Host**
 4. Select type: **Lastboard Agent**
-5. Enter the host address: `your-server-ip:2377`
+5. Enter the host address: `your-server-ip:2375`
 6. Enter the token you chose
 7. Click **Add** — your containers will appear immediately
 
@@ -99,7 +99,7 @@ docker run -d \
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `TOKEN` | *(required)* | Bearer token for authentication. Use a strong random value. |
-| `PORT` | `2377` | Port the agent listens on. |
+| `PORT` | `2375` | Port the agent listens on. |
 | `SOCKET_PATH` | `/var/run/docker.sock` | Path to the Docker Unix socket. |
 
 ---
@@ -109,7 +109,7 @@ docker run -d \
 - The agent never exposes Docker directly — every request requires a valid Bearer token
 - Use a strong random token (minimum 32 characters recommended: `openssl rand -hex 32`)
 - Only the operations Lastboard needs are proxied: list containers, read stats, start, stop, restart
-- For extra protection, restrict port `2377` in your firewall to allow connections only from your Lastboard host IP
+- For extra protection, restrict port `2375` in your firewall to allow connections only from your Lastboard host IP
 
 ---
 
@@ -118,7 +118,7 @@ docker run -d \
 The `/health` endpoint requires no authentication and can be used to verify the agent is running:
 
 ```bash
-curl http://your-server:2377/health
+curl http://your-server:2375/health
 ```
 
 ```json
