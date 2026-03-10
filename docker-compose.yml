@@ -3,7 +3,7 @@ services:
     image: ghcr.io/codigosh/lastboard-agent:latest
     container_name: lastboard-agent
     ports:
-      - "2377:2377"
+      - "2375:2375"
     environment:
       - TOKEN=change-this-to-a-secret-token
     volumes:
