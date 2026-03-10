@@ -15,7 +15,7 @@ RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /app/lastboard-agent /usr/local/bin/lastboard-agent
 
-EXPOSE 2377
+EXPOSE 2375
 
 USER nobody
 
