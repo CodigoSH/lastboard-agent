@@ -130,7 +130,7 @@ curl http://your-server:2375/health
 ## Building from Source
 
 ```bash
-git clone https://github.com/CodigoSH/lastboard-agent.git
+git clone https://git.codigosh.com/CodigoSH/lastboard-agent.git
 cd lastboard-agent
 go build -o lastboard-agent .
 TOKEN=my-secret ./lastboard-agent
@@ -146,6 +146,4 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 ---
 
-<div align="center">
-  <sub>Built with ❤️ by the CodigoSH Team</sub>
-</div>
+A project by [CodigoSH](https://git.codigosh.com/CodigoSH) — built to last.
