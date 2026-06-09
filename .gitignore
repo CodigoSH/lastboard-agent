@@ -1,3 +1,41 @@
-lastboard-agent
+# Claude Code
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Go binaries and build artifacts
+/lastboard-agent
+bin/
+dist/
+vendor/
 *.exe
+*.exe~
+*.so
+*.dylib
+*.test
 *.out
+*.prof
+coverage/
+
+# Release artifacts
+*.tar.gz
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Agent/Coding assistant files
+AGENTS.md
+CLAUDE.md

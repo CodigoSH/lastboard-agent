@@ -4,11 +4,13 @@
   <p><strong>Secure Docker bridge for Lastboard — monitor and control remote containers without exposing the Docker daemon.</strong></p>
 
   <p>
+    <img src="https://img.shields.io/badge/dynamic/json?url=https://git.codigosh.com/api/v1/repos/CodigoSH/lastboard-agent/releases/latest&query=%24.tag_name&label=Latest&style=for-the-badge&color=blue" />
+    &nbsp;
     <img src="https://img.shields.io/badge/License-Apache_2.0-green?style=for-the-badge" />
     &nbsp;
     <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" />
     &nbsp;
-    <img src="https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+    <img src="https://img.shields.io/badge/Docker-git.codigosh.com-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
   </p>
 
   <br />
@@ -42,7 +44,7 @@ Copy the following `docker-compose.yml` to your remote host:
 ```yaml
 services:
   lastboard-agent:
-    image: ghcr.io/codigosh/lastboard-agent:latest
+    image: git.codigosh.com/codigosh/lastboard-agent:latest
     container_name: lastboard-agent
     ports:
       - "2375:2375"
@@ -77,7 +79,7 @@ docker run -d \
   -e TOKEN=your-secret-token \
   -p 2375:2375 \
   --restart unless-stopped \
-  ghcr.io/codigosh/lastboard-agent:latest
+  git.codigosh.com/codigosh/lastboard-agent:latest
 ```
 
 ---
@@ -106,10 +108,22 @@ docker run -d \
 
 ## Security
 
-- The agent never exposes Docker directly — every request requires a valid Bearer token
-- Use a strong random token (minimum 32 characters recommended: `openssl rand -hex 32`)
-- Only the operations Lastboard needs are proxied: list containers, read stats, start, stop, restart
-- For extra protection, restrict port `2375` in your firewall to allow connections only from your Lastboard host IP
+- **Allowlisted by design** — the agent forwards only the exact Docker API calls Lastboard needs and rejects everything else with `404`, even with a valid token:
+
+  | Method | Path | Operation |
+  | :--- | :--- | :--- |
+  | `GET` | `/containers/json` | List containers |
+  | `GET` | `/containers/{id}/stats` | Read CPU / memory stats |
+  | `POST` | `/containers/{id}/start` | Start a container |
+  | `POST` | `/containers/{id}/stop` | Stop a container |
+  | `POST` | `/containers/{id}/restart` | Restart a container |
+
+  Creating, deleting, `exec`-ing into containers, or any other Docker operation is **not reachable** through the agent. A leaked token can only list and control the lifecycle of existing containers — never compromise the host.
+- **Bearer token on every request** — validated with constant-time comparison to prevent timing attacks. Unauthenticated requests get `401` without revealing which routes exist.
+- Use a strong random token (minimum 32 characters recommended: `openssl rand -hex 32`).
+- The Docker socket is mounted **read-only** and the container runs with no other access.
+- For extra protection, restrict port `2375` in your firewall to allow connections only from your Lastboard host IP.
+- The agent runs as `root` inside the container by default so it can read the Docker socket. To run unprivileged, grant only the host's docker group via `group_add` (see [docker-compose.yml](docker-compose.yml)).
 
 ---
 
