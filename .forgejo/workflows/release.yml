@@ -53,6 +53,35 @@ jobs:
       - name: Install dependencies
         run: apt-get update -qq && apt-get install -y -qq jq
 
+
+      - name: Generate Release Notes
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          NOTES_FILE="RELEASE_NOTES_${VERSION}.md"
+
+          if [ -f "$NOTES_FILE" ]; then
+            echo "Using existing release notes: $NOTES_FILE"
+            exit 0
+          fi
+
+          LAST_TAG=$(git tag -l "v*" --sort=-v:refname | grep -vE "^$(echo $VERSION | sed 's/[.+*?^${}()|[]/\\&/g')$" | head -n 1 || true)
+          LOG_RANGE="${LAST_TAG:+$LAST_TAG..}HEAD"
+
+          get_log() {
+            git log $LOG_RANGE --pretty=format:"%s" 2>/dev/null |               grep -iE "$1" |               grep -vE "chore\(release\)|Merge branch|Merge remote-tracking" |               sed -E 's/^(feat|fix|refactor|perf|chore|docs|style)(\([^)]+\))?: //i' |               awk '{$1=toupper(substr($1,1,1))substr($1,2)}1' |               sed 's/^/- /' | sort -u || true
+          }
+
+          FEATS=$(get_log "^feat")
+          FIXES=$(get_log "^fix")
+          CHANGED_LOG=$(get_log "^refactor|^perf|^chore")
+
+          {
+            [ -n "$FEATS" ]       && printf '### Added\n%s\n\n' "$FEATS"
+            [ -n "$FIXES" ]       && printf '### Fixed\n%s\n\n' "$FIXES"
+            [ -n "$CHANGED_LOG" ] && printf '### Changed\n%s\n' "$CHANGED_LOG"
+          } > "$NOTES_FILE"
+
       - name: Download Artifacts
         uses: actions/download-artifact@v3
         with:
