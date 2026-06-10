@@ -69,78 +69,93 @@ jobs:
         env:
           CI_TOKEN: ${{ secrets.CI_TOKEN }}
         run: |
+          set -euo pipefail
+
           VERSION="${GITHUB_REF_NAME}"
           REPO="${GITHUB_REPOSITORY}"
           API="${GITHUB_SERVER_URL}/api/v1"
           NOTES_FILE="RELEASE_NOTES_${VERSION}.md"
 
+          # Fail fast if the secret is missing — otherwise every API call below
+          # silently returns 401 and we would publish nothing while reporting success.
+          if [ -z "${CI_TOKEN:-}" ]; then
+            echo "::error::CI_TOKEN secret is empty or unset — cannot create the release." >&2
+            exit 1
+          fi
+
+          # api METHOD URL [curl args...] — runs the call, echoes the response body,
+          # and fails the job on any non-2xx status instead of swallowing the error.
+          api() {
+            local method="$1" url="$2"; shift 2
+            local out status body
+            out="$(curl -sS -w $'\n%{http_code}' -X "$method" \
+              -H "Authorization: token $CI_TOKEN" "$@" "$url")"
+            status="${out##*$'\n'}"
+            body="${out%$'\n'*}"
+            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+              echo "::error::$method $url returned HTTP $status" >&2
+              echo "$body" >&2
+              return 1
+            fi
+            printf '%s' "$body"
+          }
+
           # Detect prerelease
           IS_PRERELEASE=false
-          if [[ "$VERSION" == *"Beta"* || "$VERSION" == *"RC"* || "$VERSION" == *"beta"* || "$VERSION" == *"rc"* ]]; then
+          if [[ "$VERSION" == *Beta* || "$VERSION" == *RC* || "$VERSION" == *beta* || "$VERSION" == *rc* ]]; then
             IS_PRERELEASE=true
           fi
 
           # Read release notes
           if [ -f "$NOTES_FILE" ]; then
-            NOTES=$(cat "$NOTES_FILE")
+            NOTES="$(cat "$NOTES_FILE")"
           else
             NOTES="Release $VERSION"
           fi
+          NOTES_JSON="$(printf '%s' "$NOTES" | jq -Rs .)"
 
-          NOTES_JSON=$(echo "$NOTES" | jq -Rs .)
-
-          # Check if release already exists
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+          # Check if the release already exists (404 is the expected "new" case).
+          EXISTING_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' \
             -H "Authorization: token $CI_TOKEN" \
-            "$API/repos/$REPO/releases/tags/$VERSION")
+            "$API/repos/$REPO/releases/tags/$VERSION")"
 
-          if [ "$HTTP_CODE" = "200" ]; then
+          if [ "$EXISTING_STATUS" = "200" ]; then
             echo "Release exists, updating..."
+            RELEASE_ID="$(api GET "$API/repos/$REPO/releases/tags/$VERSION" | jq -r '.id')"
 
-            RELEASE_ID=$(curl -s \
-              -H "Authorization: token $CI_TOKEN" \
-              "$API/repos/$REPO/releases/tags/$VERSION" | jq -r '.id')
-
-            curl -s -X PATCH \
-              -H "Authorization: token $CI_TOKEN" \
+            api PATCH "$API/repos/$REPO/releases/$RELEASE_ID" \
               -H "Content-Type: application/json" \
-              -d "{\"name\": \"$VERSION\", \"body\": $NOTES_JSON, \"prerelease\": $IS_PRERELEASE}" \
-              "$API/repos/$REPO/releases/$RELEASE_ID"
+              -d "{\"name\": \"$VERSION\", \"body\": $NOTES_JSON, \"prerelease\": $IS_PRERELEASE}" > /dev/null
 
             # Delete existing assets before re-uploading
-            ASSET_IDS=$(curl -s \
-              -H "Authorization: token $CI_TOKEN" \
-              "$API/repos/$REPO/releases/$RELEASE_ID/assets" | jq -r '.[].id')
-            for asset_id in $ASSET_IDS; do
-              curl -s -X DELETE \
-                -H "Authorization: token $CI_TOKEN" \
-                "$API/repos/$REPO/releases/$RELEASE_ID/assets/$asset_id"
+            for asset_id in $(api GET "$API/repos/$REPO/releases/$RELEASE_ID/assets" | jq -r '.[].id'); do
+              api DELETE "$API/repos/$REPO/releases/$RELEASE_ID/assets/$asset_id" > /dev/null
             done
           else
             echo "Creating new release..."
-
-            RELEASE_ID=$(curl -s -X POST \
-              -H "Authorization: token $CI_TOKEN" \
+            RELEASE_ID="$(api POST "$API/repos/$REPO/releases" \
               -H "Content-Type: application/json" \
-              -d "{\"tag_name\": \"$VERSION\", \"name\": \"$VERSION\", \"body\": $NOTES_JSON, \"prerelease\": $IS_PRERELEASE}" \
-              "$API/repos/$REPO/releases" | jq -r '.id')
+              -d "{\"tag_name\": \"$VERSION\", \"name\": \"$VERSION\", \"body\": $NOTES_JSON, \"prerelease\": $IS_PRERELEASE}" | jq -r '.id')"
           fi
 
+          # Guard: a valid release must have a numeric ID before we upload anything.
+          if ! [[ "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not determine release ID (got '$RELEASE_ID')." >&2
+            exit 1
+          fi
           echo "Release ID: $RELEASE_ID"
 
           # Upload tar.gz files
-          find artifacts -name "*.tar.gz" | while read f; do
-            filename=$(basename "$f")
+          find artifacts -name "*.tar.gz" | while read -r f; do
+            filename="$(basename "$f")"
             echo "Uploading $filename..."
-            curl -s -X POST \
-              -H "Authorization: token $CI_TOKEN" \
-              -F "attachment=@$f;filename=$filename" \
-              "$API/repos/$REPO/releases/$RELEASE_ID/assets"
+            api POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
+              -F "attachment=@$f;filename=$filename" > /dev/null
           done
 
           # Upload checksums
           echo "Uploading checksums.txt..."
-          curl -s -X POST \
-            -H "Authorization: token $CI_TOKEN" \
-            -F "attachment=@artifacts/checksums.txt;filename=checksums.txt" \
-            "$API/repos/$REPO/releases/$RELEASE_ID/assets"
+          api POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
+            -F "attachment=@artifacts/checksums.txt;filename=checksums.txt" > /dev/null
+
+          echo "Release $VERSION published with all assets."
