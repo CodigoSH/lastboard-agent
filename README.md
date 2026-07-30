@@ -94,6 +94,8 @@ docker run -d \
 6. Enter the token you chose
 7. Click **Add** — your containers will appear immediately
 
+The widget side of this is covered in the [Docker widget documentation](https://codigosh.com/docs/lastboard/widgets/docker/).
+
 ---
 
 ## Environment Variables
@@ -151,6 +153,12 @@ TOKEN=my-secret ./lastboard-agent
 ```
 
 Requires Go 1.26+. No external dependencies.
+
+---
+
+## Support
+
+We are an open-source initiative managed through [Open Collective Europe](https://opencollective.com/codigosh). If our tools are useful to you, an unconditional donation helps keep the infrastructure running.
 
 ---
 
