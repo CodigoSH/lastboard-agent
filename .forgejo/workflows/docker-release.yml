@@ -11,10 +11,16 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # Pinned rather than inherited: `ubuntu-latest` is whatever the runner
+    # mapped it to the day it registered. The Docker socket is mounted into
+    # the job container either way — the runner builds one, from
+    # `container:` or from the label, and binds /var/run/docker.sock into it
+    # (act/runner/run_context.go, forgejo-runner v13.2.0).
+    container: node:24-trixie
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Docker CLI and Buildx
         run: |
@@ -42,7 +48,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ steps.vars.outputs.image }}
           tags: |
