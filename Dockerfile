@@ -3,7 +3,7 @@
 # ==========================================
 # Stage 1: Build (Go, cross-compiled — no QEMU)
 # ==========================================
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 # ==========================================
 # Stage 2: Runtime (Alpine, no RUN = no QEMU)
 # ==========================================
-FROM alpine:3.21
+FROM alpine:3.24
 
 COPY --from=builder /app/lastboard-agent /usr/local/bin/lastboard-agent
 

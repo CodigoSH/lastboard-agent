@@ -9,6 +9,9 @@ jobs:
   build-and-release:
     name: Build & Release
     runs-on: ubuntu-latest
+    # Pinned here rather than inherited: `ubuntu-latest` is whatever the
+    # runner mapped it to the day it registered, which was a Debian from 2021.
+    container: node:24-trixie
     strategy:
       matrix:
         include:
@@ -24,7 +27,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.27.1'
 
       - name: Build
         run: |
@@ -46,6 +49,7 @@ jobs:
   release:
     needs: build-and-release
     runs-on: ubuntu-latest
+    container: node:24-trixie
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
