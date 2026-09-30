@@ -141,6 +141,8 @@ curl http://your-server:2375/health
 {"status":"ok"}
 ```
 
+The image uses the same endpoint as its Docker `HEALTHCHECK`, so `docker ps` shows the agent as `healthy` once it is serving. It checks the agent, not the Docker daemon behind it.
+
 ---
 
 ## Building from Source

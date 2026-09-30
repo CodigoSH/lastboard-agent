@@ -25,6 +25,12 @@ COPY --from=builder /app/lastboard-agent /usr/local/bin/lastboard-agent
 
 EXPOSE 2375
 
+# /health needs no token and never touches the Docker socket, so this says
+# whether the agent is serving — not whether Docker is. busybox wget ships
+# with Alpine; PORT is read at run time, so an overridden port is followed.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-2375}/health" || exit 1
+
 # Runs as root by default so it can read the Docker socket (root:docker 0660),
 # matching the rest of the CodigoSH stack. The socket is the only thing the
 # agent touches, it is mounted read-only, and the API is reduced to an
