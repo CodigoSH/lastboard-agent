@@ -87,7 +87,7 @@ docker run -d \
 Every release also publishes a static binary for `linux-amd64` and `linux-arm64`, for hosts where you would rather not run the agent in a container. Pick the version from the [releases page](https://git.codigosh.com/CodigoSH/lastboard-agent/releases), download it with its checksums, and verify before running:
 
 ```bash
-VERSION=v1.0.7   # the release you want
+VERSION=v1.1.0   # the release you want
 ARCH=amd64       # or arm64
 BASE=https://git.codigosh.com/CodigoSH/lastboard-agent/releases/download/$VERSION
 
@@ -163,7 +163,7 @@ curl http://your-server:2375/health
 ```
 
 ```json
-{"status":"ok","version":"v1.0.7"}
+{"status":"ok","version":"v1.1.0"}
 ```
 
 The image uses the same endpoint as its Docker `HEALTHCHECK`, so `docker ps` shows the agent as `healthy` once it is serving. It checks the agent, not the Docker daemon behind it.
