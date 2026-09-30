@@ -8,7 +8,7 @@
     &nbsp;
     <img src="https://img.shields.io/badge/License-Apache_2.0-green?style=for-the-badge" />
     &nbsp;
-    <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" />
+    <img src="https://img.shields.io/badge/Go-1.27-00ADD8?style=for-the-badge&logo=go&logoColor=white" />
     &nbsp;
     <img src="https://img.shields.io/badge/Docker-git.codigosh.com-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
   </p>
@@ -154,7 +154,7 @@ go build -o lastboard-agent .
 TOKEN=my-secret ./lastboard-agent
 ```
 
-Requires Go 1.26+. No external dependencies.
+Requires Go 1.27.1+. No external dependencies.
 
 ---
 
