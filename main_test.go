@@ -1,0 +1,245 @@
+package main
+
+import (
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+)
+
+const testToken = "0123456789abcdef0123456789abcdef"
+
+// fakeDocker stands in for the Docker socket and remembers every request that
+// reached it. The allowlist's promise is about what gets through to the
+// daemon, so that is what these tests look at — a 404 from the agent means
+// nothing if the request was forwarded anyway.
+type fakeDocker struct {
+	mu   sync.Mutex
+	hits []*http.Request
+}
+
+func (f *fakeDocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	f.hits = append(f.hits, r)
+	f.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{}`))
+}
+
+func (f *fakeDocker) received() []*http.Request {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*http.Request(nil), f.hits...)
+}
+
+// newAgent starts a fake Docker daemon on a Unix socket and the agent in
+// front of it.
+func newAgent(t *testing.T) (*httptest.Server, *fakeDocker) {
+	t.Helper()
+
+	socket := filepath.Join(t.TempDir(), "docker.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("listen on fake socket: %v", err)
+	}
+	docker := &fakeDocker{}
+	daemon := &http.Server{Handler: docker}
+	go daemon.Serve(ln)
+	t.Cleanup(func() { daemon.Close() })
+
+	agent := httptest.NewServer(newHandler(testToken, socket))
+	t.Cleanup(agent.Close)
+	return agent, docker
+}
+
+func call(t *testing.T, agent *httptest.Server, method, path, token string) int {
+	t.Helper()
+	req, err := http.NewRequest(method, agent.URL+path, nil)
+	if err != nil {
+		t.Fatalf("build %s %s: %v", method, path, err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	// Report redirects as they are instead of following them: a redirect
+	// that ended up on an allowed route would be a way through.
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+// The five calls Lastboard makes reach the daemon, unchanged.
+func TestAllowedRoutesReachDocker(t *testing.T) {
+	agent, docker := newAgent(t)
+
+	allowed := []struct{ method, path string }{
+		{"GET", "/containers/json?all=true"},
+		{"GET", "/containers/abc123/stats?stream=false"},
+		{"POST", "/containers/abc123/start"},
+		{"POST", "/containers/my_app.web-1/stop"},
+		{"POST", "/containers/abc123/restart"},
+	}
+	for _, c := range allowed {
+		if got := call(t, agent, c.method, c.path, testToken); got != http.StatusOK {
+			t.Errorf("%s %s: status %d, want 200", c.method, c.path, got)
+		}
+	}
+
+	hits := docker.received()
+	if len(hits) != len(allowed) {
+		t.Fatalf("docker received %d requests, want %d", len(hits), len(allowed))
+	}
+	for i, c := range allowed {
+		path, _, _ := strings.Cut(c.path, "?")
+		if hits[i].Method != c.method || hits[i].URL.Path != path {
+			t.Errorf("docker received %s %s, want %s %s",
+				hits[i].Method, hits[i].URL.Path, c.method, path)
+		}
+	}
+	if got := hits[0].URL.Query().Get("all"); got != "true" {
+		t.Errorf("list lost its query: all=%q, want \"true\"", got)
+	}
+}
+
+// Everything outside the allowlist is refused, even with a valid token, and
+// never reaches the daemon. These are the calls that would turn a leaked
+// token into control of the host.
+func TestEverythingElseIsRefused(t *testing.T) {
+	agent, docker := newAgent(t)
+
+	refused := []struct{ method, path string }{
+		{"POST", "/containers/create"},
+		{"POST", "/containers/abc123/exec"},
+		{"POST", "/exec/abc123/start"},
+		{"DELETE", "/containers/abc123"},
+		{"POST", "/containers/abc123/kill"},
+		{"GET", "/containers/abc123/logs"},
+		{"GET", "/containers/abc123/json"},
+		{"POST", "/containers/json"},
+		{"GET", "/images/json"},
+		{"POST", "/images/create"},
+		{"GET", "/version"},
+		{"GET", "/v1.47/containers/json"},
+		{"GET", "/containers/../images/json"},
+	}
+	for _, c := range refused {
+		if got := call(t, agent, c.method, c.path, testToken); got < 300 {
+			t.Errorf("%s %s: status %d, want it refused", c.method, c.path, got)
+		}
+	}
+	if hits := docker.received(); len(hits) != 0 {
+		for _, h := range hits {
+			t.Errorf("reached docker: %s %s", h.Method, h.URL.Path)
+		}
+	}
+}
+
+// Without the token nothing is forwarded, and the answer is the same 401 for
+// an allowed route and a forbidden one, so it does not reveal which exist.
+func TestTokenIsRequired(t *testing.T) {
+	agent, docker := newAgent(t)
+
+	for _, token := range []string{"", "wrong", testToken + "x", strings.ToUpper(testToken)} {
+		for _, path := range []string{"/containers/json", "/containers/create", "/nothing"} {
+			if got := call(t, agent, "GET", path, token); got != http.StatusUnauthorized {
+				t.Errorf("GET %s with token %q: status %d, want 401", path, token, got)
+			}
+		}
+	}
+
+	// The scheme is case-insensitive, as RFC 7235 says; the token is not.
+	req, _ := http.NewRequest("GET", agent.URL+"/containers/json", nil)
+	req.Header.Set("Authorization", "bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("lower-case scheme: status %d, want 200", resp.StatusCode)
+	}
+
+	if hits := docker.received(); len(hits) != 1 {
+		t.Errorf("docker received %d requests, want only the one with the right token", len(hits))
+	}
+}
+
+// /health answers without a token, so an operator can check the agent is up
+// before they have the token at hand.
+func TestHealthIsPublic(t *testing.T) {
+	agent, docker := newAgent(t)
+
+	if got := call(t, agent, "GET", "/health", ""); got != http.StatusOK {
+		t.Errorf("GET /health: status %d, want 200", got)
+	}
+	if hits := docker.received(); len(hits) != 0 {
+		t.Errorf("/health reached docker %d times; it should not touch the socket", len(hits))
+	}
+}
+
+// An {id} that is not a plausible container ID or name stops at the agent.
+func TestInvalidContainerIDIsRejected(t *testing.T) {
+	agent, docker := newAgent(t)
+
+	for _, id := range []string{"-rm", ".hidden", "_x", "a%2Fb", strings.Repeat("a", 129)} {
+		path := "/containers/" + id + "/start"
+		if got := call(t, agent, "POST", path, testToken); got != http.StatusBadRequest {
+			t.Errorf("POST %s: status %d, want 400", path, got)
+		}
+	}
+	if hits := docker.received(); len(hits) != 0 {
+		t.Errorf("an invalid id reached docker %d times", len(hits))
+	}
+}
+
+// Stats always reach Docker as a single reading, whatever the caller asked
+// for, and any other parameter is left alone.
+func TestStatsAreASingleReading(t *testing.T) {
+	agent, docker := newAgent(t)
+
+	for _, query := range []string{"", "?stream=true", "?stream=1&one-shot=true", "?stream=true&stream=true"} {
+		call(t, agent, "GET", "/containers/abc123/stats"+query, testToken)
+	}
+
+	hits := docker.received()
+	if len(hits) != 4 {
+		t.Fatalf("docker received %d requests, want 4", len(hits))
+	}
+	for i, h := range hits {
+		if got := h.URL.Query()["stream"]; len(got) != 1 || got[0] != "false" {
+			t.Errorf("request %d reached docker with stream=%q, want exactly [\"false\"]", i, got)
+		}
+	}
+	if got := hits[2].URL.Query().Get("one-shot"); got != "true" {
+		t.Errorf("one-shot was dropped: got %q", got)
+	}
+}
+
+func TestWeakTokenWarning(t *testing.T) {
+	for _, short := range []string{"short", strings.Repeat("a", minTokenLength-1)} {
+		if msg := weakTokenWarning(short); !strings.Contains(msg, "characters long") {
+			t.Errorf("token %q: got %q, want the length warning", short, msg)
+		}
+	}
+	// The examples are all short too, so the length check alone would warn
+	// about them. What is asserted is that they are named for what they are.
+	for _, example := range exampleTokens {
+		if msg := weakTokenWarning(example); !strings.Contains(msg, "example value") {
+			t.Errorf("token %q: got %q, want the example-value warning", example, msg)
+		}
+	}
+	for _, fine := range []string{testToken, strings.Repeat("f", 64)} {
+		if msg := weakTokenWarning(fine); msg != "" {
+			t.Errorf("token of length %d warned: %s", len(fine), msg)
+		}
+	}
+}
