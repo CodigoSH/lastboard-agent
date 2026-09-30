@@ -97,12 +97,19 @@ func newHandler(token, socketPath string) http.Handler {
 	// Allowlist — the exact Docker API surface Lastboard uses. Any path or
 	// method not registered here returns 404, so a leaked token can only
 	// list and control containers, never create, delete, or exec into them.
+	//
+	// The query string is part of that surface. Every Lastboard release has
+	// sent `all=true` to the list and `stream=false` to stats, and nothing
+	// else; any other parameter is dropped before the request is forwarded.
+	// Left open, a leaked token could still ask the daemon to size every
+	// container on disk (`size=true`), hold a stats stream open for ever, or
+	// stop a container with a timeout of days (`t=`).
 	docker := http.NewServeMux()
-	docker.Handle("GET /containers/json", proxy)
-	docker.Handle("GET /containers/{id}/stats", requireValidID(singleReading(proxy)))
-	docker.Handle("POST /containers/{id}/start", requireValidID(proxy))
-	docker.Handle("POST /containers/{id}/stop", requireValidID(proxy))
-	docker.Handle("POST /containers/{id}/restart", requireValidID(proxy))
+	docker.Handle("GET /containers/json", onlyQuery([]string{"all"}, nil, proxy))
+	docker.Handle("GET /containers/{id}/stats", requireValidID(onlyQuery(nil, singleReading, proxy)))
+	docker.Handle("POST /containers/{id}/start", requireValidID(onlyQuery(nil, nil, proxy)))
+	docker.Handle("POST /containers/{id}/stop", requireValidID(onlyQuery(nil, nil, proxy)))
+	docker.Handle("POST /containers/{id}/restart", requireValidID(onlyQuery(nil, nil, proxy)))
 
 	mux := http.NewServeMux()
 
@@ -126,7 +133,14 @@ func newHandler(token, socketPath string) http.Handler {
 // use and handles streaming responses (stats, logs) gracefully.
 func newDockerProxy(socketPath string) *httputil.ReverseProxy {
 	targetURL, _ := url.Parse("http://docker")
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(targetURL)
+			// The token is the agent's, not Docker's. The daemon ignores it,
+			// but there is no reason to hand it on past the check.
+			pr.Out.Header.Del("Authorization")
+		},
+	}
 	proxy.Transport = &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -176,14 +190,25 @@ func requireValidID(next http.Handler) http.Handler {
 //
 // Docker streams stats forever unless told otherwise, and the server has no
 // WriteTimeout (see main), so a stream would hold its connection for as long
-// as the caller liked. Lastboard only ever asks for one reading; a leaked
-// token should not be able to open streams that never end.
-func singleReading(next http.Handler) http.Handler {
+// as the caller liked. Lastboard only ever asks for one reading.
+var singleReading = map[string]string{"stream": "false"}
+
+// onlyQuery forwards the request with the query reduced to the keys in keep,
+// and each key in force set to its value whatever the caller sent.
+func onlyQuery(keep []string, force map[string]string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		in := r.URL.Query()
+		out := url.Values{}
+		for _, key := range keep {
+			if values, ok := in[key]; ok {
+				out[key] = values
+			}
+		}
+		for key, value := range force {
+			out.Set(key, value)
+		}
 		r = r.Clone(r.Context())
-		q := r.URL.Query()
-		q.Set("stream", "false")
-		r.URL.RawQuery = q.Encode()
+		r.URL.RawQuery = out.Encode()
 		next.ServeHTTP(w, r)
 	})
 }

@@ -121,7 +121,9 @@ The widget side of this is covered in the [Docker widget documentation](https://
   | `POST` | `/containers/{id}/restart` | Restart a container |
 
   Creating, deleting, `exec`-ing into containers, or any other Docker operation is **not reachable** through the agent. A leaked token can only list and control the lifecycle of existing containers — never compromise the host.
-- **Bearer token on every request** — validated with constant-time comparison to prevent timing attacks. Unauthenticated requests get `401` without revealing which routes exist.
+
+  Query parameters are allowlisted too: only `all` reaches the list, stats are always a single reading, and start, stop and restart take none. Anything else — `size=true`, a stop timeout, a signal — is dropped before the request is forwarded.
+- **Bearer token on every request** — validated with constant-time comparison to prevent timing attacks. Unauthenticated requests get `401` without revealing which routes exist. The token is checked by the agent and removed before the request is forwarded; Docker never sees it.
 - Use a strong random token (minimum 32 characters recommended: `openssl rand -hex 32`). The agent logs a warning at startup if the token is shorter than that or is one of the example values shown in the documentation.
 - The Docker socket is mounted **read-only** and the container runs with no other access.
 - For extra protection, restrict port `2375` in your firewall to allow connections only from your Lastboard host IP.

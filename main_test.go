@@ -202,7 +202,7 @@ func TestInvalidContainerIDIsRejected(t *testing.T) {
 }
 
 // Stats always reach Docker as a single reading, whatever the caller asked
-// for, and any other parameter is left alone.
+// for.
 func TestStatsAreASingleReading(t *testing.T) {
 	agent, docker := newAgent(t)
 
@@ -219,8 +219,51 @@ func TestStatsAreASingleReading(t *testing.T) {
 			t.Errorf("request %d reached docker with stream=%q, want exactly [\"false\"]", i, got)
 		}
 	}
-	if got := hits[2].URL.Query().Get("one-shot"); got != "true" {
-		t.Errorf("one-shot was dropped: got %q", got)
+}
+
+// Only the parameters Lastboard sends reach Docker; the rest are dropped on
+// the way. Each route is asked with the one parameter that would hurt on it.
+func TestOnlyKnownQueryParametersReachDocker(t *testing.T) {
+	agent, docker := newAgent(t)
+
+	cases := []struct {
+		method, path string
+		want         string // the query Docker must receive, encoded
+	}{
+		{"GET", "/containers/json?all=true&size=true&filters=%7B%7D", "all=true"},
+		{"GET", "/containers/json?size=true", ""},
+		{"GET", "/containers/abc123/stats?one-shot=true&stream=true", "stream=false"},
+		{"POST", "/containers/abc123/start?detachKeys=ctrl-x", ""},
+		{"POST", "/containers/abc123/stop?t=999999&signal=SIGKILL", ""},
+		{"POST", "/containers/abc123/restart?t=999999", ""},
+	}
+	for _, c := range cases {
+		call(t, agent, c.method, c.path, testToken)
+	}
+
+	hits := docker.received()
+	if len(hits) != len(cases) {
+		t.Fatalf("docker received %d requests, want %d", len(hits), len(cases))
+	}
+	for i, c := range cases {
+		if got := hits[i].URL.RawQuery; got != c.want {
+			t.Errorf("%s %s reached docker with query %q, want %q", c.method, c.path, got, c.want)
+		}
+	}
+}
+
+// The agent's token is checked and stops there; Docker never sees it.
+func TestTokenIsNotForwarded(t *testing.T) {
+	agent, docker := newAgent(t)
+
+	call(t, agent, "GET", "/containers/json", testToken)
+
+	hits := docker.received()
+	if len(hits) != 1 {
+		t.Fatalf("docker received %d requests, want 1", len(hits))
+	}
+	if got := hits[0].Header.Get("Authorization"); got != "" {
+		t.Errorf("docker received Authorization %q; the token should end at the agent", got)
 	}
 }
 
