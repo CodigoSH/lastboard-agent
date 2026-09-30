@@ -53,6 +53,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          # The notes are built from the commits since the previous tag. The
+          # default checkout is one commit deep with only this tag, so the
+          # previous tag is not there and neither is anything before HEAD.
+          fetch-depth: 0
 
       - name: Install dependencies
         run: apt-get update -qq && apt-get install -y -qq jq
@@ -80,10 +85,12 @@ jobs:
           FIXES=$(get_log "^fix")
           CHANGED_LOG=$(get_log "^refactor|^perf|^chore")
 
+          # `if`, not `[ … ] && printf`: under set -e a false test as the last
+          # command of the group fails the step whenever that section is empty.
           {
-            [ -n "$FEATS" ]       && printf '### Added\n%s\n\n' "$FEATS"
-            [ -n "$FIXES" ]       && printf '### Fixed\n%s\n\n' "$FIXES"
-            [ -n "$CHANGED_LOG" ] && printf '### Changed\n%s\n' "$CHANGED_LOG"
+            if [ -n "$FEATS" ]; then printf '### Added\n%s\n\n' "$FEATS"; fi
+            if [ -n "$FIXES" ]; then printf '### Fixed\n%s\n\n' "$FIXES"; fi
+            if [ -n "$CHANGED_LOG" ]; then printf '### Changed\n%s\n' "$CHANGED_LOG"; fi
           } > "$NOTES_FILE"
 
       - name: Download Artifacts
