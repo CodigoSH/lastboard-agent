@@ -21,6 +21,10 @@ import (
 // that is not a plausible identifier, before the request reaches the socket.
 var containerIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
+// version is stamped at build time with -ldflags "-X main.version=<tag>".
+// A build that was not stamped says so rather than claiming a number.
+var version = "dev"
+
 func main() {
 	token := os.Getenv("TOKEN")
 	if token == "" {
@@ -37,7 +41,7 @@ func main() {
 		socketPath = "/var/run/docker.sock"
 	}
 
-	log.Printf("Lastboard Agent starting on port %s", port)
+	log.Printf("Lastboard Agent %s starting on port %s", version, port)
 	log.Printf("Docker socket: %s", socketPath)
 	if msg := weakTokenWarning(token); msg != "" {
 		log.Printf("WARNING: %s", msg)
@@ -113,11 +117,12 @@ func newHandler(token, socketPath string) http.Handler {
 
 	mux := http.NewServeMux()
 
-	// Health endpoint — public, no auth required.
+	// Health endpoint — public, no auth required. It carries the version so
+	// an operator can tell which agent a host runs without the token.
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": version})
 	})
 
 	// Everything else is authenticated first, then matched against the

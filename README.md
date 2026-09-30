@@ -133,14 +133,14 @@ The widget side of this is covered in the [Docker widget documentation](https://
 
 ## Health Check
 
-The `/health` endpoint requires no authentication and can be used to verify the agent is running:
+The `/health` endpoint requires no authentication and can be used to verify the agent is running, and which version it is:
 
 ```bash
 curl http://your-server:2375/health
 ```
 
 ```json
-{"status":"ok"}
+{"status":"ok","version":"v1.0.7"}
 ```
 
 The image uses the same endpoint as its Docker `HEALTHCHECK`, so `docker ps` shows the agent as `healthy` once it is serving. It checks the agent, not the Docker daemon behind it.
@@ -155,6 +155,8 @@ cd lastboard-agent
 go build -o lastboard-agent .
 TOKEN=my-secret ./lastboard-agent
 ```
+
+A build from source reports its version as `dev`. The release builds stamp the tag with `-ldflags "-X main.version=vX.Y.Z"`.
 
 Requires Go 1.27.1+. No external dependencies.
 

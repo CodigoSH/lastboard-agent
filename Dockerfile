@@ -13,8 +13,10 @@ COPY main.go .
 # Cross-compile for the target platform from the native builder arch.
 ARG TARGETOS
 ARG TARGETARCH
+# The release tag, passed by the image workflow. A local build says "dev".
+ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /app/lastboard-agent .
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /app/lastboard-agent .
 
 # ==========================================
 # Stage 2: Runtime (Alpine, no RUN = no QEMU)

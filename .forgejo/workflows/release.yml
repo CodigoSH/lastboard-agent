@@ -35,7 +35,7 @@ jobs:
           export GOOS=${{ matrix.goos }}
           export GOARCH=${{ matrix.goarch }}
 
-          go build -trimpath -ldflags="-s -w" -o lastboard-agent .
+          go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o lastboard-agent .
 
       - name: Package
         run: tar -czvf lastboard-agent-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz lastboard-agent

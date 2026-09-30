@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -264,6 +265,24 @@ func TestTokenIsNotForwarded(t *testing.T) {
 	}
 	if got := hits[0].Header.Get("Authorization"); got != "" {
 		t.Errorf("docker received Authorization %q; the token should end at the agent", got)
+	}
+}
+
+// /health names the build, so an operator can tell which agent a host runs.
+func TestHealthCarriesTheVersion(t *testing.T) {
+	agent, _ := newAgent(t)
+
+	resp, err := http.Get(agent.URL + "/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode /health: %v", err)
+	}
+	if body["status"] != "ok" || body["version"] != version {
+		t.Errorf("/health = %v, want status ok and version %q", body, version)
 	}
 }
 

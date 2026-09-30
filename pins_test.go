@@ -94,3 +94,27 @@ func TestNothingIsPinnedToLatest(t *testing.T) {
 		}
 	}
 }
+
+// Every build that ships stamps the version into main.version. Nothing else
+// would notice if one stopped: -X on a variable that does not exist is not an
+// error, and the release would simply say "dev" in its log and on /health.
+func TestReleaseBuildsStampTheVersion(t *testing.T) {
+	stamps := []struct {
+		file string
+		find *regexp.Regexp
+	}{
+		{"main.go", regexp.MustCompile(`(?m)^var version = "dev"$`)},
+		{"Dockerfile", regexp.MustCompile(`(?m)^[^#]*-X main\.version=\$\{VERSION\}`)},
+		{".forgejo/workflows/docker-release.yml", regexp.MustCompile(`(?m)^[^#]*--build-arg VERSION="\$\{GITHUB_REF_NAME\}"`)},
+		{".forgejo/workflows/release.yml", regexp.MustCompile(`(?m)^[^#]*-X main\.version=\$\{GITHUB_REF_NAME\}`)},
+	}
+	for _, s := range stamps {
+		body, err := os.ReadFile(s.file)
+		if err != nil {
+			t.Fatalf("read %s: %v", s.file, err)
+		}
+		if !s.find.Match(body) {
+			t.Errorf("%s does not stamp the version (looked for %s)", s.file, s.find)
+		}
+	}
+}
