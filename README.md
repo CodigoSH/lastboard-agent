@@ -82,6 +82,29 @@ docker run -d \
   git.codigosh.com/codigosh/lastboard-agent:latest
 ```
 
+### Binary (without a container)
+
+Every release also publishes a static binary for `linux-amd64` and `linux-arm64`, for hosts where you would rather not run the agent in a container. Pick the version from the [releases page](https://git.codigosh.com/CodigoSH/lastboard-agent/releases), download it with its checksums, and verify before running:
+
+```bash
+VERSION=v1.0.7   # the release you want
+ARCH=amd64       # or arm64
+BASE=https://git.codigosh.com/CodigoSH/lastboard-agent/releases/download/$VERSION
+
+curl -fsSLO "$BASE/lastboard-agent-linux-$ARCH.tar.gz"
+curl -fsSLO "$BASE/checksums.txt"
+sha256sum -c --ignore-missing checksums.txt
+tar -xzf "lastboard-agent-linux-$ARCH.tar.gz"
+```
+
+Run it as a user that can read the Docker socket — root, or a member of the host's `docker` group — with the same environment variables as the container:
+
+```bash
+TOKEN=your-secret-token ./lastboard-agent
+```
+
+Keeping it running across reboots (a systemd unit, for example) is up to you; the container above does that for you with `restart: unless-stopped`.
+
 ---
 
 ## Connecting to Lastboard
