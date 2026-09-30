@@ -9,7 +9,8 @@ import (
 
 // A version that is written down twice can drift, and nothing notices until the
 // day it matters: the binary on the release page and the image in the registry
-// are built by different files, and each names its own Go.
+// are built by different files, each names its own Go, and the tests run on a
+// third.
 //
 // This does NOT ask the internet whether something newer exists. A test that
 // goes red because somebody else published a release turns the build red on a
@@ -25,6 +26,7 @@ func TestGoVersionAgrees(t *testing.T) {
 		{"go.mod", regexp.MustCompile(`(?m)^go ([0-9.]+)$`), "go X.Y.Z"},
 		{"Dockerfile", regexp.MustCompile(`golang:([0-9.]+)-alpine`), "FROM golang:X.Y.Z-alpine"},
 		{".forgejo/workflows/release.yml", regexp.MustCompile(`go-version:\s*'([0-9.]+)'`), "go-version: 'X.Y.Z'"},
+		{".forgejo/workflows/tests.yml", regexp.MustCompile(`go-version:\s*'([0-9.]+)'`), "go-version: 'X.Y.Z'"},
 	}
 
 	found := map[string]string{}
@@ -64,6 +66,7 @@ func TestNothingIsPinnedToLatest(t *testing.T) {
 		"Dockerfile",
 		".forgejo/workflows/release.yml",
 		".forgejo/workflows/docker-release.yml",
+		".forgejo/workflows/tests.yml",
 	}
 	floats := []*regexp.Regexp{
 		regexp.MustCompile(`@latest\b`),
