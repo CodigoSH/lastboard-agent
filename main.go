@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -38,7 +39,59 @@ func main() {
 
 	log.Printf("Lastboard Agent starting on port %s", port)
 	log.Printf("Docker socket: %s", socketPath)
+	if msg := weakTokenWarning(token); msg != "" {
+		log.Printf("WARNING: %s", msg)
+	}
 
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           newHandler(token, socketPath),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// We DO NOT set ReadTimeout and WriteTimeout because they break
+		// long-running streaming connections like Docker stats/events.
+	}
+
+	log.Fatal(srv.ListenAndServe())
+}
+
+// minTokenLength is what `openssl rand -hex 32` gives with room to spare.
+// Counted in bytes on purpose: this is about how hard the token is to guess,
+// not how much of it fits on a screen.
+const minTokenLength = 32
+
+// exampleTokens are the placeholders the documentation shows. Someone who
+// copied the compose file without changing it is running with a token that
+// is published on the internet.
+var exampleTokens = []string{
+	"change-this-to-a-secret-token",
+	"your-secret-token",
+	"your_secure_random_token",
+}
+
+// weakTokenWarning says what is wrong with a token, or "" if nothing is.
+//
+// It only warns. Refusing to start would take down every agent that updates
+// through `:latest` with a short token, and the operator would find out from a
+// dashboard that stopped showing containers, not from this message.
+func weakTokenWarning(token string) string {
+	for _, example := range exampleTokens {
+		if token == example {
+			return "TOKEN is the example value from the documentation. " +
+				"Anyone who has read it can control your containers. " +
+				"Generate a real one with: openssl rand -hex 32"
+		}
+	}
+	if len(token) < minTokenLength {
+		return fmt.Sprintf("TOKEN is %d characters long; use at least %d. "+
+			"Generate one with: openssl rand -hex 32", len(token), minTokenLength)
+	}
+	return ""
+}
+
+// newHandler builds everything the agent serves: the public health endpoint
+// and the authenticated allowlist in front of the Docker socket.
+func newHandler(token, socketPath string) http.Handler {
 	proxy := newDockerProxy(socketPath)
 
 	// Allowlist — the exact Docker API surface Lastboard uses. Any path or
@@ -46,7 +99,7 @@ func main() {
 	// list and control containers, never create, delete, or exec into them.
 	docker := http.NewServeMux()
 	docker.Handle("GET /containers/json", proxy)
-	docker.Handle("GET /containers/{id}/stats", requireValidID(proxy))
+	docker.Handle("GET /containers/{id}/stats", requireValidID(singleReading(proxy)))
 	docker.Handle("POST /containers/{id}/start", requireValidID(proxy))
 	docker.Handle("POST /containers/{id}/stop", requireValidID(proxy))
 	docker.Handle("POST /containers/{id}/restart", requireValidID(proxy))
@@ -65,16 +118,7 @@ func main() {
 	// routes exist; authenticated requests to disallowed routes get 404.
 	mux.Handle("/", authMiddleware(token, docker))
 
-	srv := &http.Server{
-		Addr:              ":" + port,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		// We DO NOT set ReadTimeout and WriteTimeout because they break
-		// long-running streaming connections like Docker stats/events.
-	}
-
-	log.Fatal(srv.ListenAndServe())
+	return mux
 }
 
 // newDockerProxy builds a reverse proxy that streams requests to the Docker
@@ -124,6 +168,22 @@ func requireValidID(next http.Handler) http.Handler {
 			writeJSONError(w, http.StatusBadRequest, "invalid container id")
 			return
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// singleReading forces stats to answer once and close.
+//
+// Docker streams stats forever unless told otherwise, and the server has no
+// WriteTimeout (see main), so a stream would hold its connection for as long
+// as the caller liked. Lastboard only ever asks for one reading; a leaked
+// token should not be able to open streams that never end.
+func singleReading(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.Clone(r.Context())
+		q := r.URL.Query()
+		q.Set("stream", "false")
+		r.URL.RawQuery = q.Encode()
 		next.ServeHTTP(w, r)
 	})
 }

@@ -115,14 +115,14 @@ The widget side of this is covered in the [Docker widget documentation](https://
   | Method | Path | Operation |
   | :--- | :--- | :--- |
   | `GET` | `/containers/json` | List containers |
-  | `GET` | `/containers/{id}/stats` | Read CPU / memory stats |
+  | `GET` | `/containers/{id}/stats` | Read CPU / memory stats (one reading; streaming is not forwarded) |
   | `POST` | `/containers/{id}/start` | Start a container |
   | `POST` | `/containers/{id}/stop` | Stop a container |
   | `POST` | `/containers/{id}/restart` | Restart a container |
 
   Creating, deleting, `exec`-ing into containers, or any other Docker operation is **not reachable** through the agent. A leaked token can only list and control the lifecycle of existing containers — never compromise the host.
 - **Bearer token on every request** — validated with constant-time comparison to prevent timing attacks. Unauthenticated requests get `401` without revealing which routes exist.
-- Use a strong random token (minimum 32 characters recommended: `openssl rand -hex 32`).
+- Use a strong random token (minimum 32 characters recommended: `openssl rand -hex 32`). The agent logs a warning at startup if the token is shorter than that or is one of the example values shown in the documentation.
 - The Docker socket is mounted **read-only** and the container runs with no other access.
 - For extra protection, restrict port `2375` in your firewall to allow connections only from your Lastboard host IP.
 - The agent runs as `root` inside the container by default so it can read the Docker socket. To run unprivileged, grant only the host's docker group via `group_add` (see [docker-compose.yml](docker-compose.yml)).
