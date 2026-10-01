@@ -214,3 +214,24 @@ func TestReleaseIsSigned(t *testing.T) {
 		}
 	}
 }
+
+// NOTICE says the agent compiles in no third-party module. That stays true
+// only while go.mod requires none, so a module that arrives without being
+// named there fails here first.
+func TestNoticeMatchesGoMod(t *testing.T) {
+	mod, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	notice, err := os.ReadFile("NOTICE")
+	if err != nil {
+		t.Fatalf("read NOTICE: %v", err)
+	}
+	if regexp.MustCompile(`(?m)^require\b`).Match(mod) {
+		t.Errorf("go.mod requires a module, and NOTICE says none is compiled in.\n" +
+			"Name it, with its licence, under THIRD-PARTY COMPONENTS, and change this test.")
+	}
+	if !strings.Contains(string(notice), "None. Everything the agent and its signing tool do uses the Go standard") {
+		t.Error("NOTICE no longer says the agent has no third-party modules; this test should change with it")
+	}
+}

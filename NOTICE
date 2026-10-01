@@ -1,0 +1,31 @@
+Lastboard Agent
+Copyright 2026 CodigoSH
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+---
+
+THIRD-PARTY COMPONENTS
+
+1. Go modules compiled into the released binaries and container images
+
+   None. Everything the agent and its signing tool do uses the Go standard
+   library. A test keeps this true: it fails the day go.mod requires a module,
+   so that module is named here before it ships. `go version -m
+   lastboard-agent` prints the same inventory out of a binary you already have.
+
+2. Build-time only, not redistributed
+
+   The image at the top of the README is composed by scripts/docs-mockup.ts,
+   run with Bun, from screenshots of Lastboard (Apache-2.0, the same project's
+   dashboard). Neither ends up in the binary or the image.
