@@ -105,7 +105,7 @@ The agent stores nothing and sends nothing anywhere. It keeps no record of reque
 
 Docker on the remote host, and the agent's port (`2375` by default) reachable from the Lastboard host.
 
-### Docker Compose (Recommended)
+### Quick Start with Docker
 
 Copy the following `docker-compose.yml` to the remote host:
 
@@ -138,19 +138,19 @@ Then start it:
 docker compose up -d
 ```
 
-### Docker Run
+Without Compose, the same thing in one command:
 
 ```bash
-docker run -d \
-  --name lastboard-agent \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+docker run -d --name lastboard-agent --restart unless-stopped -p 2375:2375 \
   -e TOKEN=your-secret-token \
-  -p 2375:2375 \
-  --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
   git.codigosh.com/codigosh/lastboard-agent:latest
 ```
 
-### Binary (without a container)
+<details>
+<summary><strong>Without Docker: the release binary</strong></summary>
+
+<br />
 
 Every release also publishes a static binary for `linux-amd64` and `linux-arm64`, for hosts where you would rather not run the agent in a container. Pick the version from the [releases page](https://git.codigosh.com/CodigoSH/lastboard-agent/releases), download it with its checksums, and verify before running:
 
@@ -188,6 +188,8 @@ TOKEN=your-secret-token ./lastboard-agent
 ```
 
 Keeping it running across reboots (a systemd unit, for example) is up to you; the container above does that for you with `restart: unless-stopped`.
+
+</details>
 
 ### Configuration
 
