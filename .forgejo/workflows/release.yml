@@ -199,3 +199,25 @@ jobs:
             -F "attachment=@artifacts/checksums.txt;filename=checksums.txt" > /dev/null
 
           echo "Release $VERSION published with all assets."
+
+  # The site reads the latest release from this repository's API at build
+  # time, so it is rebuilt once the release exists — and only if it was
+  # published. Dispatched rather than done here, so the Coolify call lives in
+  # one place.
+  trigger-site-rebuild:
+    name: Rebuild the website
+    needs: release
+    runs-on: ubuntu-latest
+    container: node:24-trixie
+    steps:
+      - name: Dispatch the website rebuild
+        env:
+          CI_TOKEN: ${{ secrets.CI_TOKEN }}
+        run: |
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Authorization: token $CI_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"ref":"main"}' \
+            "${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}/actions/workflows/site-rebuild.yml/dispatches")
+          echo "Website rebuild dispatch HTTP $CODE"
+          [ "$CODE" = "204" ] || { echo "Website rebuild dispatch failed (HTTP $CODE)"; exit 1; }

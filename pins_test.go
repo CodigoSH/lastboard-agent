@@ -67,6 +67,7 @@ func TestNothingIsPinnedToLatest(t *testing.T) {
 		".forgejo/workflows/release.yml",
 		".forgejo/workflows/docker-release.yml",
 		".forgejo/workflows/tests.yml",
+		".forgejo/workflows/site-rebuild.yml",
 	}
 	floats := []*regexp.Regexp{
 		regexp.MustCompile(`@latest\b`),
@@ -119,5 +120,37 @@ func TestReleaseBuildsStampTheVersion(t *testing.T) {
 		if !s.find.Match(body) {
 			t.Errorf("%s does not stamp the version (looked for %s)", s.file, s.find)
 		}
+	}
+}
+
+// A release rebuilds the website once it is published. site-rebuild.yml only
+// runs on a push to itself or when dispatched, so if release.yml stops
+// dispatching it, nothing fails: the site just goes on advertising the
+// previous version.
+func TestReleaseDispatchesTheSiteRebuild(t *testing.T) {
+	body, err := os.ReadFile(".forgejo/workflows/release.yml")
+	if err != nil {
+		t.Fatalf("read release.yml: %v", err)
+	}
+	var job strings.Builder
+	in := false
+	for _, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   ") && strings.HasSuffix(line, ":") {
+			in = line == "  trigger-site-rebuild:"
+		}
+		if in && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			job.WriteString(line + "\n")
+		}
+	}
+	for _, want := range []string{
+		"needs: release",
+		"/actions/workflows/site-rebuild.yml/dispatches",
+	} {
+		if !strings.Contains(job.String(), want) {
+			t.Errorf("release.yml's trigger-site-rebuild job lacks %q", want)
+		}
+	}
+	if _, err := os.Stat(".forgejo/workflows/site-rebuild.yml"); err != nil {
+		t.Errorf("release.yml dispatches site-rebuild.yml, which does not exist: %v", err)
 	}
 }
