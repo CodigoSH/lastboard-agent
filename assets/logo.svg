@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" role="img" aria-label="Lastboard Agent">
+  <title>Lastboard Agent</title>
+  <!--
+    The mark: a satellite. The agent is the part that lives far away, on a
+    host that is not the dashboard's, and reports back from there: a body in
+    the middle and its panels on either side, each panel two cells.
+
+    Separate pieces, each one solid in a single tone of the house orange,
+    with no gradient and no outline: it has to read at twenty-four pixels and
+    at five hundred.
+  -->
+  <rect x="40" y="95" width="74" height="77" rx="16" fill="#c2410c"/>
+  <rect x="40" y="188" width="74" height="77" rx="16" fill="#c2410c"/>
+  <rect x="246" y="95" width="74" height="77" rx="16" fill="#c2410c"/>
+  <rect x="246" y="188" width="74" height="77" rx="16" fill="#c2410c"/>
+  <circle cx="180" cy="180" r="50" fill="#e8520e"/>
+</svg>
