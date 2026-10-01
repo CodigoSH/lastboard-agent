@@ -90,13 +90,12 @@ The token is compared in constant time, and on every route but `/health` a reque
 
 That limit is the agent's allowlist, not the mount: `:ro` on a Unix socket stops nothing from being written through it. It is in the examples as good practice, not as the protection.
 
-- Use a strong random token: `openssl rand -hex 32`.
 - Restrict the agent's port in your firewall to the Lastboard host.
 - The agent runs as `root` inside the container so it can read the Docker socket. To run it unprivileged, grant only the host's `docker` group with `group_add` (see [docker-compose.yml](docker-compose.yml)).
 
 ### Privacy
 
-The agent stores nothing and sends nothing anywhere. It keeps no record of requests: its log carries its startup lines, the token warning when there is one, and the errors it gets back from Docker.
+The agent stores nothing and sends nothing anywhere. It keeps no record of requests: its log carries its startup lines, the token warning when there is one, and a line when it cannot reach Docker.
 
 ---
 
@@ -154,16 +153,6 @@ docker run -d --name lastboard-agent --restart unless-stopped -p 2375:2375 \
 | `PORT` | `2375` | Port the agent listens on. |
 | `SOCKET_PATH` | `/var/run/docker.sock` | Path to the Docker Unix socket. |
 
-To check it is up, `/health` needs no token:
-
-```bash
-curl http://your-server:2375/health
-```
-
-```json
-{"status":"ok","version":"v1.1.1"}
-```
-
 ---
 
 ## Connecting to Lastboard
@@ -174,8 +163,6 @@ curl http://your-server:2375/health
 4. In **Host URL**, enter the host and port: `your-server-ip:2375`.
 5. In **Token**, enter the token you chose.
 6. **Save** the host, then **Save** the widget. The host's containers appear in the list.
-
-The [Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/) covers the rest of the widget.
 
 ---
 
@@ -198,10 +185,9 @@ Requires [Go](https://go.dev) 1.27.1 or newer.
 ```bash
 go build -o lastboard-agent .     # the agent
 go test ./...                     # the allowlist, the token and the pins
-./scripts/release.sh stable X.Y.Z "title"   # cut a release
 ```
 
-A build from source reports its version as `dev`; the image stamps the release tag with `-ldflags "-X main.version=vX.Y.Z"`.
+A build from source reports its version as `dev`; the image reports its release tag.
 
 The image at the top of this file is composed by `bun scripts/docs-mockup.ts`, with [Bun](https://bun.sh) and a Lastboard checkout beside this one (or `LASTBOARD=/path/to/it`). The two hosts in it are invented: the script serves a small Docker API on two sockets and points two agents built from this repository at them.
 

@@ -21,9 +21,6 @@ vendor/
 *.prof
 coverage/
 
-# Release artifacts
-*.tar.gz
-
 # Environment variables
 .env
 .env.*
