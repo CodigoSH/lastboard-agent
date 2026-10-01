@@ -9,9 +9,8 @@ import (
 )
 
 // A version that is written down twice can drift, and nothing notices until the
-// day it matters: the binary on the release page and the image in the registry
-// are built by different files, each names its own Go, and the tests run on a
-// third.
+// day it matters: the image is built by the Dockerfile and the tests run from
+// their own workflow, and each names its own Go.
 //
 // This does NOT ask the internet whether something newer exists. A test that
 // goes red because somebody else published a release turns the build red on a
@@ -26,7 +25,6 @@ func TestGoVersionAgrees(t *testing.T) {
 	}{
 		{"go.mod", regexp.MustCompile(`(?m)^go ([0-9.]+)$`), "go X.Y.Z"},
 		{"Dockerfile", regexp.MustCompile(`golang:([0-9.]+)-alpine`), "FROM golang:X.Y.Z-alpine"},
-		{".forgejo/workflows/release.yml", regexp.MustCompile(`go-version:\s*'([0-9.]+)'`), "go-version: 'X.Y.Z'"},
 		{".forgejo/workflows/tests.yml", regexp.MustCompile(`go-version:\s*'([0-9.]+)'`), "go-version: 'X.Y.Z'"},
 	}
 
@@ -133,9 +131,9 @@ func TestNothingIsPinnedToLatest(t *testing.T) {
 	}
 }
 
-// Every build that ships stamps the version into main.version. Nothing else
-// would notice if one stopped: -X on a variable that does not exist is not an
-// error, and the release would simply say "dev" in its log and on /health.
+// The image stamps the release tag into main.version. Nothing else would notice
+// if it stopped: -X on a variable that does not exist is not an error, and the
+// image would simply say "dev" in its log and on /health.
 func TestReleaseBuildsStampTheVersion(t *testing.T) {
 	stamps := []struct {
 		file string
@@ -144,7 +142,6 @@ func TestReleaseBuildsStampTheVersion(t *testing.T) {
 		{"main.go", regexp.MustCompile(`(?m)^var version = "dev"$`)},
 		{"Dockerfile", regexp.MustCompile(`(?m)^[^#]*-X main\.version=\$\{VERSION\}`)},
 		{".forgejo/workflows/docker-release.yml", regexp.MustCompile(`(?m)^[^#]*--build-arg VERSION="\$\{GITHUB_REF_NAME\}"`)},
-		{".forgejo/workflows/release.yml", regexp.MustCompile(`(?m)^[^#]*-X main\.version=\$\{GITHUB_REF_NAME\}`)},
 	}
 	for _, s := range stamps {
 		body, err := os.ReadFile(s.file)
@@ -189,32 +186,6 @@ func TestReleaseDispatchesTheSiteRebuild(t *testing.T) {
 	}
 }
 
-// The README tells readers to check checksums.txt.sig. If release.yml stops
-// signing or stops uploading the signature, nothing else fails: the release
-// simply ships without one.
-func TestReleaseIsSigned(t *testing.T) {
-	body, err := os.ReadFile(".forgejo/workflows/release.yml")
-	if err != nil {
-		t.Fatalf("read release.yml: %v", err)
-	}
-	var code strings.Builder
-	for _, line := range strings.Split(string(body), "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
-			code.WriteString(line + "\n")
-		}
-	}
-	for _, want := range []string{
-		"RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}",
-		"go run ./cmd/sign artifacts/checksums.txt",
-		"go run ./cmd/sign verify artifacts/checksums.txt artifacts/checksums.txt.sig",
-		"filename=checksums.txt.sig",
-	} {
-		if !strings.Contains(code.String(), want) {
-			t.Errorf("release.yml does not sign the release: no %q outside comments", want)
-		}
-	}
-}
-
 // NOTICE says the agent compiles in no third-party module. That stays true
 // only while go.mod requires none, so a module that arrives without being
 // named there fails here first.
@@ -231,7 +202,7 @@ func TestNoticeMatchesGoMod(t *testing.T) {
 		t.Errorf("go.mod requires a module, and NOTICE says none is compiled in.\n" +
 			"Name it, with its licence, under THIRD-PARTY COMPONENTS, and change this test.")
 	}
-	if !strings.Contains(string(notice), "None. Everything the agent and its signing tool do uses the Go standard") {
+	if !strings.Contains(string(notice), "None. Everything the agent does uses the Go standard") {
 		t.Error("NOTICE no longer says the agent has no third-party modules; this test should change with it")
 	}
 }

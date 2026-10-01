@@ -31,8 +31,8 @@
 ![](https://img.shields.io/badge/🔒_Docker_daemon_never_exposed-1a1a2e?style=for-the-badge)
 ![](https://img.shields.io/badge/📋_Five_calls,_nothing_else-1a1a2e?style=for-the-badge)
 ![](https://img.shields.io/badge/🔑_Token_on_every_request-1a1a2e?style=for-the-badge)
-![](https://img.shields.io/badge/📦_Single_static_binary-1a1a2e?style=for-the-badge)
-![](https://img.shields.io/badge/✍️_Signed_releases-1a1a2e?style=for-the-badge)
+![](https://img.shields.io/badge/🐳_One_container,_one_variable-1a1a2e?style=for-the-badge)
+![](https://img.shields.io/badge/♻️_Stateless-1a1a2e?style=for-the-badge)
 
 </div>
 
@@ -50,7 +50,7 @@ It runs next to Docker on the remote host, reads the local socket, and answers L
 
 | | |
 | :--- | :--- |
-| **Shape** | Single static binary (`linux/amd64`, `linux/arm64`) or container image |
+| **Shape** | A small container image for `linux/amd64` and `linux/arm64` |
 | **Storage** | None. Fully stateless |
 | **Setup** | One environment variable: `TOKEN` |
 | **Talks to** | The local Docker socket, and nothing else |
@@ -79,7 +79,6 @@ It runs next to Docker on the remote host, reads the local socket, and answers L
 
 - **`/health`**, public, reports that the agent is serving and which version it is. The image uses it as its Docker `HEALTHCHECK`.
 - **A warning at startup** when the token is shorter than 32 characters or is one of the example values from the documentation.
-- **Signed releases**: `checksums.txt` is signed with Ed25519, and the release cannot be published unsigned.
 
 ---
 
@@ -147,50 +146,6 @@ docker run -d --name lastboard-agent --restart unless-stopped -p 2375:2375 \
   git.codigosh.com/codigosh/lastboard-agent:latest
 ```
 
-<details>
-<summary><strong>Without Docker: the release binary</strong></summary>
-
-<br />
-
-Every release also publishes a static binary for `linux-amd64` and `linux-arm64`, for hosts where you would rather not run the agent in a container. Pick the version from the [releases page](https://git.codigosh.com/CodigoSH/lastboard-agent/releases), download it with its checksums, and verify before running:
-
-```bash
-VERSION=v1.1.1   # the release you want
-ARCH=amd64       # or arm64
-BASE=https://git.codigosh.com/CodigoSH/lastboard-agent/releases/download/$VERSION
-
-curl -fsSLO "$BASE/lastboard-agent-linux-$ARCH.tar.gz"
-curl -fsSLO "$BASE/checksums.txt"
-sha256sum -c --ignore-missing checksums.txt
-tar -xzf "lastboard-agent-linux-$ARCH.tar.gz"
-```
-
-`checksums.txt` is signed with Ed25519 by the release pipeline, with a key that never leaves it, so a checksum file swapped on the download server does not verify. To check the signature as well (needs OpenSSL 3.0 or newer):
-
-```bash
-cat > release-key.pem <<'KEY'
------BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAItijs5mx/5hS0kJkzNgHweFgFakZRm3JHhrxL+lVYXA=
------END PUBLIC KEY-----
-KEY
-curl -fsSLO "$BASE/checksums.txt.sig"
-base64 -d checksums.txt.sig > checksums.txt.sig.bin
-openssl pkeyutl -verify -pubin -inkey release-key.pem -rawin \
-  -in checksums.txt -sigfile checksums.txt.sig.bin
-```
-
-It prints `Signature Verified Successfully`. Releases from v1.1.1 on are signed; earlier ones have no `checksums.txt.sig`.
-
-Run it as a user that can read the Docker socket — root, or a member of the host's `docker` group — with the same environment variables as the container:
-
-```bash
-TOKEN=your-secret-token ./lastboard-agent
-```
-
-Keeping it running across reboots (a systemd unit, for example) is up to you; the container above does that for you with `restart: unless-stopped`.
-
-</details>
-
 ### Configuration
 
 | Variable | Default | Description |
@@ -232,7 +187,7 @@ The agent has no updater of its own. With the container, pull the new image and 
 docker compose pull && docker compose up -d
 ```
 
-With the binary, download the new release, verify it as above and replace the file. Releases come straight from our own Forgejo instance — no proxy and no intermediary — and are listed on the [releases page](https://git.codigosh.com/CodigoSH/lastboard-agent/releases).
+The image comes straight from our own registry — no proxy and no intermediary — and what each version changes is on the [releases page](https://git.codigosh.com/CodigoSH/lastboard-agent/releases).
 
 ---
 
@@ -242,11 +197,11 @@ Requires [Go](https://go.dev) 1.27.1 or newer.
 
 ```bash
 go build -o lastboard-agent .     # the agent
-go test ./...                     # the allowlist, the token, the pins and the signing recipe
+go test ./...                     # the allowlist, the token and the pins
 ./scripts/release.sh stable X.Y.Z "title"   # cut a release
 ```
 
-A build from source reports its version as `dev`; release builds stamp the tag with `-ldflags "-X main.version=vX.Y.Z"`.
+A build from source reports its version as `dev`; the image stamps the release tag with `-ldflags "-X main.version=vX.Y.Z"`.
 
 The image at the top of this file is composed by `bun scripts/docs-mockup.ts`, with [Bun](https://bun.sh) and a Lastboard checkout beside this one (or `LASTBOARD=/path/to/it`). The two hosts in it are invented: the script serves a small Docker API on two sockets and points two agents built from this repository at them.
 
@@ -277,7 +232,7 @@ We appreciate the organizations that support us as a gesture of goodwill to help
 
 ## Credits
 
-- **Everything here is written in this repository**: the agent and its signing tool use only the Go standard library, and the mark is drawn by hand in [assets/logo.svg](assets/logo.svg).
+- **Everything here is written in this repository**: the agent uses only the Go standard library, and the mark is drawn by hand in [assets/logo.svg](assets/logo.svg).
 
 Full attribution lives in [NOTICE](NOTICE).
 

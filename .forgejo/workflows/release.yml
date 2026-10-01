@@ -6,49 +6,14 @@ on:
       - 'v*'
 
 jobs:
-  build-and-release:
-    name: Build & Release
+  # The agent is distributed as a container image, built by docker-release.yml.
+  # This workflow only publishes the release page: the notes, and the tag the
+  # site lists.
+  release:
+    name: Release
     runs-on: ubuntu-latest
     # Pinned here rather than inherited: `ubuntu-latest` is whatever the
     # runner mapped it to the day it registered, which was a Debian from 2021.
-    container: node:24-trixie
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.27.1'
-
-      - name: Build
-        run: |
-          export CGO_ENABLED=0
-          export GOOS=${{ matrix.goos }}
-          export GOARCH=${{ matrix.goarch }}
-
-          go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o lastboard-agent .
-
-      - name: Package
-        run: tar -czvf lastboard-agent-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz lastboard-agent
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: lastboard-agent-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
-
-  release:
-    needs: build-and-release
-    runs-on: ubuntu-latest
     container: node:24-trixie
     steps:
       - name: Checkout code
@@ -92,47 +57,6 @@ jobs:
             if [ -n "$FIXES" ]; then printf '### Fixed\n%s\n\n' "$FIXES"; fi
             if [ -n "$CHANGED_LOG" ]; then printf '### Changed\n%s\n' "$CHANGED_LOG"; fi
           } > "$NOTES_FILE"
-
-      - name: Download Artifacts
-        uses: actions/download-artifact@v3
-        with:
-          path: artifacts
-
-      - name: Generate Checksums
-        run: |
-          find artifacts -name "*.tar.gz" | sort | while read f; do
-            sha256sum "$f" | awk '{print $1 "  " $2}' | sed 's|artifacts/[^/]*/||'
-          done > artifacts/checksums.txt
-          cat artifacts/checksums.txt
-
-      - name: Set up Go (for signing)
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.27.1'
-
-      - name: Sign checksums.txt
-        # The README publishes a release public key and tells people to check
-        # the signature, so a release without one is a release nobody can
-        # verify the way the documentation says. A missing secret is a
-        # failure, not a fallback. A fork with no key listed releases unsigned.
-        env:
-          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
-        run: |
-          if [ -z "$RELEASE_SIGNING_KEY" ]; then
-            if go run ./cmd/sign configured; then
-              echo "::error::cmd/sign lists a release public key, so readers will expect"
-              echo "::error::checksums.txt.sig. RELEASE_SIGNING_KEY is not set — refusing to"
-              echo "::error::publish a release that nobody can verify."
-              exit 1
-            fi
-            echo "No public key listed and no signing key — shipping an unsigned release."
-            exit 0
-          fi
-          go run ./cmd/sign artifacts/checksums.txt
-          # Checked against the listed keys before anything is published: a
-          # secret that is not the listed key's pair would sign happily and
-          # verify for nobody.
-          go run ./cmd/sign verify artifacts/checksums.txt artifacts/checksums.txt.sig
 
       - name: Create or Update Release
         env:
@@ -195,11 +119,6 @@ jobs:
             api PATCH "$API/repos/$REPO/releases/$RELEASE_ID" \
               -H "Content-Type: application/json" \
               -d "{\"name\": \"$VERSION\", \"body\": $NOTES_JSON, \"prerelease\": $IS_PRERELEASE}" > /dev/null
-
-            # Delete existing assets before re-uploading
-            for asset_id in $(api GET "$API/repos/$REPO/releases/$RELEASE_ID/assets" | jq -r '.[].id'); do
-              api DELETE "$API/repos/$REPO/releases/$RELEASE_ID/assets/$asset_id" > /dev/null
-            done
           else
             echo "Creating new release..."
             RELEASE_ID="$(api POST "$API/repos/$REPO/releases" \
@@ -207,34 +126,13 @@ jobs:
               -d "{\"tag_name\": \"$VERSION\", \"name\": \"$VERSION\", \"body\": $NOTES_JSON, \"prerelease\": $IS_PRERELEASE}" | jq -r '.id')"
           fi
 
-          # Guard: a valid release must have a numeric ID before we upload anything.
+          # Guard: a valid release must have a numeric ID.
           if ! [[ "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
             echo "::error::Could not determine release ID (got '$RELEASE_ID')." >&2
             exit 1
           fi
           echo "Release ID: $RELEASE_ID"
-
-          # Upload tar.gz files
-          find artifacts -name "*.tar.gz" | while read -r f; do
-            filename="$(basename "$f")"
-            echo "Uploading $filename..."
-            api POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
-              -F "attachment=@$f;filename=$filename" > /dev/null
-          done
-
-          # Upload checksums
-          echo "Uploading checksums.txt..."
-          api POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
-            -F "attachment=@artifacts/checksums.txt;filename=checksums.txt" > /dev/null
-
-          # And its signature, when the release was signed.
-          if [ -f artifacts/checksums.txt.sig ]; then
-            echo "Uploading checksums.txt.sig..."
-            api POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
-              -F "attachment=@artifacts/checksums.txt.sig;filename=checksums.txt.sig" > /dev/null
-          fi
-
-          echo "Release $VERSION published with all assets."
+          echo "Release $VERSION published."
 
   # The site reads the latest release from this repository's API at build
   # time, so it is rebuilt once the release exists — and only if it was

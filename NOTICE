@@ -19,10 +19,10 @@ THIRD-PARTY COMPONENTS
 
 1. Go modules compiled into the released binaries and container images
 
-   None. Everything the agent and its signing tool do uses the Go standard
-   library. A test keeps this true: it fails the day go.mod requires a module,
-   so that module is named here before it ships. `go version -m
-   lastboard-agent` prints the same inventory out of a binary you already have.
+   None. Everything the agent does uses the Go standard library. A test keeps
+   this true: it fails the day go.mod requires a module, so that module is
+   named here before it ships. `go version -m /usr/local/bin/lastboard-agent`,
+   inside the container, prints the same inventory.
 
 2. Build-time only, not redistributed
 
