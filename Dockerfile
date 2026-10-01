@@ -35,8 +35,9 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 # Runs as root by default so it can read the Docker socket (root:docker 0660),
 # matching the rest of the CodigoSH stack. The socket is the only thing the
-# agent touches, it is mounted read-only, and the API is reduced to an
-# allowlist — so this is the controlled surface, not a privileged free-for-all.
+# agent touches and the API is reduced to an allowlist — so this is the
+# controlled surface, not a privileged free-for-all. The allowlist is what
+# limits it: mounting the socket read-only does not stop requests through it.
 # To run unprivileged instead, add the host's docker GID via `group_add`
 # (see docker-compose.yml).
 ENTRYPOINT ["lastboard-agent"]

@@ -1,45 +1,113 @@
 <div align="center">
   <br />
+  <img src="assets/logo.png" alt="Lastboard Agent" width="150" />
+  <br /><br />
+
   <h1>Lastboard Agent</h1>
   <p><strong>Secure Docker bridge for Lastboard — monitor and control remote containers without exposing the Docker daemon.</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/dynamic/json?url=https://git.codigosh.com/api/v1/repos/CodigoSH/lastboard-agent/releases/latest&query=%24.tag_name&label=Latest&style=for-the-badge&color=blue" />
+    <a href="https://codigosh.com/docs/lastboard/widgets/docker/">
+      <img src="https://img.shields.io/badge/Documentation-1a1a2e?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Documentation" />
+    </a>
     &nbsp;
-    <img src="https://img.shields.io/badge/License-Apache_2.0-green?style=for-the-badge" />
+    <img src="https://img.shields.io/badge/dynamic/json?url=https://git.codigosh.com/api/v1/repos/CodigoSH/lastboard-agent/releases/latest&query=%24.tag_name&label=Latest&style=for-the-badge&color=blue" alt="Latest release" />
     &nbsp;
-    <img src="https://img.shields.io/badge/Go-1.27-00ADD8?style=for-the-badge&logo=go&logoColor=white" />
-    &nbsp;
-    <img src="https://img.shields.io/badge/Docker-git.codigosh.com-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+    <img src="https://img.shields.io/badge/License-Apache_2.0-green?style=for-the-badge" alt="Apache 2.0" />
   </p>
 
   <br />
+
+  <img src="assets/mockup.png" alt="Lastboard Agent — Lastboard's Docker widget listing the containers of two hosts, each reached through an agent, on a laptop and a tablet" width="92%" style="border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);" />
+
+  <br /><br />
+
 </div>
 
 ---
 
-## What is this?
+<div align="center">
 
-The Lastboard Agent runs on any remote Docker host as a lightweight container. It mounts the local Docker Unix socket and exposes a secure, token-authenticated HTTP API that Lastboard uses to monitor and control containers on that machine.
+![](https://img.shields.io/badge/🔒_Docker_daemon_never_exposed-1a1a2e?style=for-the-badge)
+![](https://img.shields.io/badge/📋_Five_calls,_nothing_else-1a1a2e?style=for-the-badge)
+![](https://img.shields.io/badge/🔑_Token_on_every_request-1a1a2e?style=for-the-badge)
+![](https://img.shields.io/badge/📦_Single_static_binary-1a1a2e?style=for-the-badge)
+![](https://img.shields.io/badge/✍️_Signed_releases-1a1a2e?style=for-the-badge)
 
-Instead of exposing the Docker daemon over TCP — which is inherently dangerous — Lastboard communicates only with the agent. The agent acts as a controlled, authenticated proxy: it forwards only the specific operations Lastboard needs and nothing more.
-
-No database. No config files. Restart or replace it at any time — it's fully stateless.
-
----
-
-## Requirements
-
-- Docker installed on the remote host
-- Port `2375` reachable from the Lastboard host (or any custom port you configure)
+</div>
 
 ---
 
-## Quick Start
+📖 **[Read the Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/)** for the Lastboard side: adding hosts, choosing containers and what each row shows. This README covers the agent itself.
 
-### Docker Compose (recommended)
+---
 
-Copy the following `docker-compose.yml` to your remote host:
+## Why Lastboard Agent
+
+Watching the containers of another machine from a dashboard usually means exposing that machine's Docker daemon over TCP, and the Docker API is the keys to the host: whoever can reach it can start a privileged container and own the machine. The agent was built with a simple rule: **Lastboard gets exactly the five calls it uses, and nothing else reaches Docker.**
+
+It runs next to Docker on the remote host, reads the local socket, and answers Lastboard over HTTP with a token on every request. No database, no configuration files and no state: restart or replace it at any time.
+
+| | |
+| :--- | :--- |
+| **Shape** | Single static binary (`linux/amd64`, `linux/arm64`) or container image |
+| **Storage** | None. Fully stateless |
+| **Setup** | One environment variable: `TOKEN` |
+| **Talks to** | The local Docker socket, and nothing else |
+| **Dependencies** | None beyond the Go standard library |
+| **Licence** | Apache-2.0 |
+| **Telemetry** | None. Ever |
+
+---
+
+## Features
+
+### What Lastboard can do through it
+
+- **List every container** on the host, running or stopped, with its image, state and published ports.
+- **Read CPU and memory** for each one.
+- **Start, stop and restart** a container from its row in the dashboard.
+- **Many hosts, one widget**: put an agent on each machine and Lastboard lists them together, each row naming where it runs.
+
+### What it refuses
+
+- **Anything that is not one of those five calls is refused**, even with a valid token — `404`, or `405` for a known path asked with the wrong method: no creating, deleting or `exec`-ing into containers, no images, no volumes, no networks.
+- **Query parameters are allowlisted too.** Only `all` reaches the list, stats are always a single reading, and start, stop and restart take none — so a leaked token cannot hold a stats stream open, make the daemon size every container on disk, or stop one with a timeout of days.
+- **A container ID that is not a plausible ID or name** stops at the agent with `400`, before anything reaches the socket.
+
+### Operations
+
+- **`/health`**, public, reports that the agent is serving and which version it is. The image uses it as its Docker `HEALTHCHECK`.
+- **A warning at startup** when the token is shorter than 32 characters or is one of the example values from the documentation.
+- **Signed releases**: `checksums.txt` is signed with Ed25519, and the release cannot be published unsigned.
+
+---
+
+## Security & Privacy
+
+### Security
+
+The token is compared in constant time, and on every route but `/health` a request without the right one gets `401` whatever it asks for, so an unauthenticated caller cannot tell which routes exist. After the check, the token is removed from the request: Docker never sees it. The five calls are the whole surface a leaked token gives away — list and control the lifecycle of existing containers, never compromise the host.
+
+That limit is the agent's allowlist, not the mount: `:ro` on a Unix socket stops nothing from being written through it. It is in the examples as good practice, not as the protection.
+
+- Use a strong random token: `openssl rand -hex 32`.
+- Restrict the agent's port in your firewall to the Lastboard host.
+- The agent runs as `root` inside the container so it can read the Docker socket. To run it unprivileged, grant only the host's `docker` group with `group_add` (see [docker-compose.yml](docker-compose.yml)).
+
+### Privacy
+
+The agent stores nothing and sends nothing anywhere. It keeps no record of requests: its log carries its startup lines, the token warning when there is one, and the errors it gets back from Docker.
+
+---
+
+## Installation Methods
+
+Docker on the remote host, and the agent's port (`2375` by default) reachable from the Lastboard host.
+
+### Docker Compose (Recommended)
+
+Copy the following `docker-compose.yml` to the remote host:
 
 ```yaml
 services:
@@ -87,7 +155,7 @@ docker run -d \
 Every release also publishes a static binary for `linux-amd64` and `linux-arm64`, for hosts where you would rather not run the agent in a container. Pick the version from the [releases page](https://git.codigosh.com/CodigoSH/lastboard-agent/releases), download it with its checksums, and verify before running:
 
 ```bash
-VERSION=v1.1.0   # the release you want
+VERSION=v1.1.1   # the release you want
 ARCH=amd64       # or arm64
 BASE=https://git.codigosh.com/CodigoSH/lastboard-agent/releases/download/$VERSION
 
@@ -121,23 +189,7 @@ TOKEN=your-secret-token ./lastboard-agent
 
 Keeping it running across reboots (a systemd unit, for example) is up to you; the container above does that for you with `restart: unless-stopped`.
 
----
-
-## Connecting to Lastboard
-
-1. Open your Lastboard dashboard
-2. Add a **Docker** widget, or open the settings of an existing one
-3. Click **Add Host**
-4. Select type: **Lastboard Agent**
-5. Enter the host address: `your-server-ip:2375`
-6. Enter the token you chose
-7. Click **Add** — your containers will appear immediately
-
-The widget side of this is covered in the [Docker widget documentation](https://codigosh.com/docs/lastboard/widgets/docker/).
-
----
-
-## Environment Variables
+### Configuration
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
@@ -145,71 +197,87 @@ The widget side of this is covered in the [Docker widget documentation](https://
 | `PORT` | `2375` | Port the agent listens on. |
 | `SOCKET_PATH` | `/var/run/docker.sock` | Path to the Docker Unix socket. |
 
----
-
-## Security
-
-- **Allowlisted by design** — the agent forwards only the exact Docker API calls Lastboard needs and rejects everything else with `404`, even with a valid token:
-
-  | Method | Path | Operation |
-  | :--- | :--- | :--- |
-  | `GET` | `/containers/json` | List containers |
-  | `GET` | `/containers/{id}/stats` | Read CPU / memory stats (one reading; streaming is not forwarded) |
-  | `POST` | `/containers/{id}/start` | Start a container |
-  | `POST` | `/containers/{id}/stop` | Stop a container |
-  | `POST` | `/containers/{id}/restart` | Restart a container |
-
-  Creating, deleting, `exec`-ing into containers, or any other Docker operation is **not reachable** through the agent. A leaked token can only list and control the lifecycle of existing containers — never compromise the host.
-
-  Query parameters are allowlisted too: only `all` reaches the list, stats are always a single reading, and start, stop and restart take none. Anything else — `size=true`, a stop timeout, a signal — is dropped before the request is forwarded.
-- **Bearer token on every request** — validated with constant-time comparison to prevent timing attacks. Unauthenticated requests get `401` without revealing which routes exist. The token is checked by the agent and removed before the request is forwarded; Docker never sees it.
-- Use a strong random token (minimum 32 characters recommended: `openssl rand -hex 32`). The agent logs a warning at startup if the token is shorter than that or is one of the example values shown in the documentation.
-- The Docker socket is mounted **read-only** and the container runs with no other access.
-- For extra protection, restrict port `2375` in your firewall to allow connections only from your Lastboard host IP.
-- The agent runs as `root` inside the container by default so it can read the Docker socket. To run unprivileged, grant only the host's docker group via `group_add` (see [docker-compose.yml](docker-compose.yml)).
-
----
-
-## Health Check
-
-The `/health` endpoint requires no authentication and can be used to verify the agent is running, and which version it is:
+To check it is up, `/health` needs no token:
 
 ```bash
 curl http://your-server:2375/health
 ```
 
 ```json
-{"status":"ok","version":"v1.1.0"}
+{"status":"ok","version":"v1.1.1"}
 ```
-
-The image uses the same endpoint as its Docker `HEALTHCHECK`, so `docker ps` shows the agent as `healthy` once it is serving. It checks the agent, not the Docker daemon behind it.
 
 ---
 
-## Building from Source
+## Connecting to Lastboard
+
+1. In Lastboard, enter edit mode and add a **Docker** widget, or open the settings of an existing one.
+2. Click **Add New Host**.
+3. Give it a **Name**, and choose **Lastboard Agent** as its **Type**.
+4. In **Host URL**, enter the host and port: `your-server-ip:2375`.
+5. In **Token**, enter the token you chose.
+6. **Save** the host, then **Save** the widget. The host's containers appear in the list.
+
+The [Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/) covers the rest of the widget.
+
+---
+
+## Updates
+
+The agent has no updater of its own. With the container, pull the new image and recreate it:
 
 ```bash
-git clone https://git.codigosh.com/CodigoSH/lastboard-agent.git
-cd lastboard-agent
-go build -o lastboard-agent .
-TOKEN=my-secret ./lastboard-agent
+docker compose pull && docker compose up -d
 ```
 
-A build from source reports its version as `dev`. The release builds stamp the tag with `-ldflags "-X main.version=vX.Y.Z"`.
-
-Requires Go 1.27.1+. No external dependencies.
+With the binary, download the new release, verify it as above and replace the file. Releases come straight from our own Forgejo instance — no proxy and no intermediary — and are listed on the [releases page](https://git.codigosh.com/CodigoSH/lastboard-agent/releases).
 
 ---
 
-## Support
+## Build
 
-We are an open-source initiative managed through [Open Collective Europe](https://opencollective.com/codigosh). If our tools are useful to you, an unconditional donation helps keep the infrastructure running.
+Requires [Go](https://go.dev) 1.27.1 or newer.
+
+```bash
+go build -o lastboard-agent .     # the agent
+go test ./...                     # the allowlist, the token, the pins and the signing recipe
+./scripts/release.sh stable X.Y.Z "title"   # cut a release
+```
+
+A build from source reports its version as `dev`; release builds stamp the tag with `-ldflags "-X main.version=vX.Y.Z"`.
+
+The image at the top of this file is composed by `bun scripts/docs-mockup.ts`, with [Bun](https://bun.sh) and a Lastboard checkout beside this one (or `LASTBOARD=/path/to/it`). The two hosts in it are invented: the script serves a small Docker API on two sockets and points two agents built from this repository at them.
 
 ---
 
-## License
+## Support & Recognition
 
-Apache 2.0 — see [LICENSE](LICENSE).
+We are an open-source initiative managed through [Open Collective Europe](https://opencollective.com/codigosh).
+
+### Financial Support
+If you find our tools useful, consider supporting our infrastructure through an unconditional donation.
+
+[<img src="https://opencollective.com/codigosh/donate/button@2x.png?color=blue" width="250" />](https://opencollective.com/codigosh)
+
+### Acknowledgments
+Special thanks to everyone supporting our mission. 
+<a href="https://opencollective.com/codigosh">
+  <img src="https://opencollective.com/codigosh/tiers/backer.svg?width=890&button=false" />
+</a>
+
+### Organizations
+We appreciate the organizations that support us as a gesture of goodwill to help maintain our infrastructure.
+<a href="https://opencollective.com/codigosh">
+  <img src="https://opencollective.com/codigosh/tiers/sponsor.svg?width=890&button=false" />
+</a>
+
+---
+
+## Credits
+
+- **Everything here is written in this repository**: the agent and its signing tool use only the Go standard library, and the mark is drawn by hand in [assets/logo.svg](assets/logo.svg).
+
+Full attribution lives in [NOTICE](NOTICE).
 
 ---
 
