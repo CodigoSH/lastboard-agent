@@ -55,6 +55,34 @@ func TestGoVersionAgrees(t *testing.T) {
 	}
 }
 
+// The release preflight runs staticcheck so that a tag which would turn the
+// Tests workflow red cannot be cut. That only holds while both run the same
+// version.
+func TestStaticcheckVersionAgrees(t *testing.T) {
+	pins := []struct {
+		file string
+		find *regexp.Regexp
+	}{
+		{"scripts/release.sh", regexp.MustCompile(`STATICCHECK_VERSION="(v[0-9.]+)"`)},
+		{".forgejo/workflows/tests.yml", regexp.MustCompile(`honnef\.co/go/tools/cmd/staticcheck@(v[0-9.]+)`)},
+	}
+	found := map[string]string{}
+	for _, p := range pins {
+		body, err := os.ReadFile(p.file)
+		if err != nil {
+			t.Fatalf("read %s: %v", p.file, err)
+		}
+		m := p.find.FindSubmatch(body)
+		if m == nil {
+			t.Fatalf("no staticcheck version found in %s (looked for %s)", p.file, p.find)
+		}
+		found[p.file] = string(m[1])
+	}
+	if a, b := found["scripts/release.sh"], found[".forgejo/workflows/tests.yml"]; a != b {
+		t.Errorf("staticcheck is pinned to two versions: release.sh %s, tests.yml %s", a, b)
+	}
+}
+
 // Nothing that builds a release may float. A moving tag means the artefact that
 // was tested and the artefact that was published are not the same thing.
 //
@@ -68,6 +96,7 @@ func TestNothingIsPinnedToLatest(t *testing.T) {
 		".forgejo/workflows/docker-release.yml",
 		".forgejo/workflows/tests.yml",
 		".forgejo/workflows/site-rebuild.yml",
+		"scripts/release.sh",
 	}
 	floats := []*regexp.Regexp{
 		regexp.MustCompile(`@latest\b`),
