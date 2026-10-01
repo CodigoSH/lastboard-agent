@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A page for the agent on codigosh.com, and a mark and a showcase image of its own
 
 ### Removed
-- The release binaries, `checksums.txt` and its Ed25519 signature. A release now carries its notes and nothing else; the agent is the image at `git.codigosh.com/codigosh/lastboard-agent`. Releases up to v1.1.1 keep their files, and anyone running a binary can switch to the image or build from source with Go
+- The release binaries, `checksums.txt` and its Ed25519 signature. None of the releases carries them any more, this one or the earlier ones: the agent is the image at `git.codigosh.com/codigosh/lastboard-agent`, and anyone running a binary can switch to the image or build from source with Go
 
 ## [1.1.1] - 2026-10-01
 
