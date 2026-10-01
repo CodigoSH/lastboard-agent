@@ -97,6 +97,22 @@ sha256sum -c --ignore-missing checksums.txt
 tar -xzf "lastboard-agent-linux-$ARCH.tar.gz"
 ```
 
+`checksums.txt` is signed with Ed25519 by the release pipeline, with a key that never leaves it, so a checksum file swapped on the download server does not verify. To check the signature as well (needs OpenSSL 3.0 or newer):
+
+```bash
+cat > release-key.pem <<'KEY'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAItijs5mx/5hS0kJkzNgHweFgFakZRm3JHhrxL+lVYXA=
+-----END PUBLIC KEY-----
+KEY
+curl -fsSLO "$BASE/checksums.txt.sig"
+base64 -d checksums.txt.sig > checksums.txt.sig.bin
+openssl pkeyutl -verify -pubin -inkey release-key.pem -rawin \
+  -in checksums.txt -sigfile checksums.txt.sig.bin
+```
+
+It prints `Signature Verified Successfully`. Releases from v1.1.1 on are signed; earlier ones have no `checksums.txt.sig`.
+
 Run it as a user that can read the Docker socket — root, or a member of the host's `docker` group — with the same environment variables as the container:
 
 ```bash

@@ -105,6 +105,35 @@ jobs:
           done > artifacts/checksums.txt
           cat artifacts/checksums.txt
 
+      - name: Set up Go (for signing)
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.1'
+
+      - name: Sign checksums.txt
+        # The README publishes a release public key and tells people to check
+        # the signature, so a release without one is a release nobody can
+        # verify the way the documentation says. A missing secret is a
+        # failure, not a fallback. A fork with no key listed releases unsigned.
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            if go run ./cmd/sign configured; then
+              echo "::error::cmd/sign lists a release public key, so readers will expect"
+              echo "::error::checksums.txt.sig. RELEASE_SIGNING_KEY is not set — refusing to"
+              echo "::error::publish a release that nobody can verify."
+              exit 1
+            fi
+            echo "No public key listed and no signing key — shipping an unsigned release."
+            exit 0
+          fi
+          go run ./cmd/sign artifacts/checksums.txt
+          # Checked against the listed keys before anything is published: a
+          # secret that is not the listed key's pair would sign happily and
+          # verify for nobody.
+          go run ./cmd/sign verify artifacts/checksums.txt artifacts/checksums.txt.sig
+
       - name: Create or Update Release
         env:
           CI_TOKEN: ${{ secrets.CI_TOKEN }}
@@ -197,6 +226,13 @@ jobs:
           echo "Uploading checksums.txt..."
           api POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
             -F "attachment=@artifacts/checksums.txt;filename=checksums.txt" > /dev/null
+
+          # And its signature, when the release was signed.
+          if [ -f artifacts/checksums.txt.sig ]; then
+            echo "Uploading checksums.txt.sig..."
+            api POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
+              -F "attachment=@artifacts/checksums.txt.sig;filename=checksums.txt.sig" > /dev/null
+          fi
 
           echo "Release $VERSION published with all assets."
 

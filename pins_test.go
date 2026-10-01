@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -35,17 +36,21 @@ func TestGoVersionAgrees(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s pins Go but could not be read: %v", p.file, err)
 		}
-		m := p.find.FindSubmatch(body)
-		if m == nil {
+		ms := p.find.FindAllSubmatch(body, -1)
+		if ms == nil {
 			// A pin that moved or was removed is exactly the drift this
 			// exists to catch; passing here would be checking nothing.
 			t.Fatalf("no Go version found in %s.\nExpected something like: %s\n"+
 				"If the pin moved, move this test with it.", p.file, p.human)
 		}
-		found[p.file] = string(m[1])
+		// Every occurrence: release.yml sets up Go once to build and once
+		// to sign, and either could drift on its own.
+		for i, m := range ms {
+			found[fmt.Sprintf("%s (#%d)", p.file, i+1)] = string(m[1])
+		}
 	}
 
-	want := found["go.mod"]
+	want := found["go.mod (#1)"]
 	for file, got := range found {
 		if got != want {
 			t.Errorf("Go is pinned to two different versions:\n  go.mod: %s\n  %s: %s\n"+
@@ -181,5 +186,31 @@ func TestReleaseDispatchesTheSiteRebuild(t *testing.T) {
 	}
 	if _, err := os.Stat(".forgejo/workflows/site-rebuild.yml"); err != nil {
 		t.Errorf("release.yml dispatches site-rebuild.yml, which does not exist: %v", err)
+	}
+}
+
+// The README tells readers to check checksums.txt.sig. If release.yml stops
+// signing or stops uploading the signature, nothing else fails: the release
+// simply ships without one.
+func TestReleaseIsSigned(t *testing.T) {
+	body, err := os.ReadFile(".forgejo/workflows/release.yml")
+	if err != nil {
+		t.Fatalf("read release.yml: %v", err)
+	}
+	var code strings.Builder
+	for _, line := range strings.Split(string(body), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			code.WriteString(line + "\n")
+		}
+	}
+	for _, want := range []string{
+		"RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}",
+		"go run ./cmd/sign artifacts/checksums.txt",
+		"go run ./cmd/sign verify artifacts/checksums.txt artifacts/checksums.txt.sig",
+		"filename=checksums.txt.sig",
+	} {
+		if !strings.Contains(code.String(), want) {
+			t.Errorf("release.yml does not sign the release: no %q outside comments", want)
+		}
 	}
 }
