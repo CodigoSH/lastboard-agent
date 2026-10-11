@@ -95,7 +95,7 @@ STATICCHECK_VERSION="v0.7.0-0.dev.0.20261009230814-452d5bb86b45"
 # the repository red after the tag is public, here it stops the release before anything
 # is written. Pinned to the version tests.yml uses; the tool is pinned, the advisory
 # database it reads is not, and that is the point.
-GOVULNCHECK_VERSION="v1.8.0"
+GOVULNCHECK_VERSION="v1.9.0"
 
 die() { echo "❌ $1" >&2; exit 1; }
 

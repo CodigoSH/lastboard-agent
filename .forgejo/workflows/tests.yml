@@ -56,5 +56,5 @@ jobs:
         # Blocking: fails when the code calls a known-vulnerable symbol, most
         # likely in the standard library — the fix is then a Go patch release.
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           "$(go env GOPATH)/bin/govulncheck" ./...
