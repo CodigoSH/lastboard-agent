@@ -66,8 +66,8 @@ func TestStaticcheckVersionAgrees(t *testing.T) {
 		file string
 		find *regexp.Regexp
 	}{
-		{"scripts/release.sh", regexp.MustCompile(`STATICCHECK_VERSION="(v[0-9.]+)"`)},
-		{".forgejo/workflows/tests.yml", regexp.MustCompile(`honnef\.co/go/tools/cmd/staticcheck@(v[0-9.]+)`)},
+		{"scripts/release.sh", regexp.MustCompile(`STATICCHECK_VERSION="(v[0-9][0-9A-Za-z.\-]*)"`)},
+		{".forgejo/workflows/tests.yml", regexp.MustCompile(`honnef\.co/go/tools/cmd/staticcheck@(v[0-9][0-9A-Za-z.\-]*)`)},
 	}
 	found := map[string]string{}
 	for _, p := range pins {
@@ -83,6 +83,58 @@ func TestStaticcheckVersionAgrees(t *testing.T) {
 	}
 	if a, b := found["scripts/release.sh"], found[".forgejo/workflows/tests.yml"]; a != b {
 		t.Errorf("staticcheck is pinned to two versions: release.sh %s, tests.yml %s", a, b)
+	}
+}
+
+// The release preflight runs govulncheck so that a tag which would turn the Tests
+// workflow red cannot be cut, which only holds while both run the same version.
+func TestGovulncheckVersionAgrees(t *testing.T) {
+	pins := []struct {
+		file string
+		find *regexp.Regexp
+	}{
+		{"scripts/release.sh", regexp.MustCompile(`GOVULNCHECK_VERSION="(v[0-9.]+)"`)},
+		{".forgejo/workflows/tests.yml", regexp.MustCompile(`golang\.org/x/vuln/cmd/govulncheck@(v[0-9.]+)`)},
+	}
+	found := map[string]string{}
+	for _, p := range pins {
+		body, err := os.ReadFile(p.file)
+		if err != nil {
+			t.Fatalf("read %s: %v", p.file, err)
+		}
+		m := p.find.FindSubmatch(body)
+		if m == nil {
+			t.Fatalf("no govulncheck version found in %s (looked for %s)", p.file, p.find)
+		}
+		found[p.file] = string(m[1])
+	}
+	if a, b := found["scripts/release.sh"], found[".forgejo/workflows/tests.yml"]; a != b {
+		t.Errorf("govulncheck is pinned to two versions: release.sh %s, tests.yml %s", a, b)
+	}
+}
+
+// The scan that turns the repository red after a release has to be able to stop the
+// release first. A guard on an absence, so comments are stripped: the prose that
+// explains the step would satisfy a plain search.
+func TestTheReleaseRunsTheVulnerabilityScanBeforeTagging(t *testing.T) {
+	body, err := os.ReadFile("scripts/release.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var code []string
+	for _, line := range strings.Split(string(body), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			code = append(code, line)
+		}
+	}
+	script := strings.Join(code, "\n")
+	scan := strings.Index(script, `govulncheck@"$GOVULNCHECK_VERSION" ./...`)
+	if scan < 0 {
+		t.Fatal("the preflight in scripts/release.sh has no govulncheck step: a release " +
+			"could be tagged with a reachable advisory and turn CI red in public")
+	}
+	if tag := strings.Index(script, "git tag"); tag >= 0 && scan > tag {
+		t.Fatal("the scan runs after the tag is made: it has to be in the preflight")
 	}
 }
 

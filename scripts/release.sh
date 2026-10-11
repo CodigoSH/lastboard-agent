@@ -85,7 +85,17 @@ OTHER_PRODUCTS=(LastHelp LastGYM LastDAV)
 RELEASE_BRANCH="main"
 # Pinned, and pinned to the same value .forgejo/workflows/tests.yml uses: a
 # checker that is not the one CI runs proves nothing about CI.
-STATICCHECK_VERSION="v0.8.1"
+# A pseudo-version, deliberately: the last tagged release reads the compiler's export
+# data up to format 4 and Go 1.27.2 writes format 5, so every package that imports the
+# standard library fails to load. The commit is exact and immutable on the module proxy;
+# it goes back to a tagged release the day one reads format 5.
+STATICCHECK_VERSION="v0.7.0-0.dev.0.20261009230814-452d5bb86b45"
+
+# The vulnerability scan is a preflight step because of where it fails: in CI it turns
+# the repository red after the tag is public, here it stops the release before anything
+# is written. Pinned to the version tests.yml uses; the tool is pinned, the advisory
+# database it reads is not, and that is the point.
+GOVULNCHECK_VERSION="v1.8.0"
 
 die() { echo "❌ $1" >&2; exit 1; }
 
@@ -169,6 +179,12 @@ else
     go run honnef.co/go/tools/cmd/staticcheck@"$STATICCHECK_VERSION" ./... || \
         die "staticcheck failed. Run 'go run honnef.co/go/tools/cmd/staticcheck@$STATICCHECK_VERSION ./...' to see why."
     echo "   ✅ staticcheck"
+
+    # It exits non-zero only for what this code reaches, and the usual cause is the Go
+    # toolchain being a patch behind.
+    go run golang.org/x/vuln/cmd/govulncheck@"$GOVULNCHECK_VERSION" ./... >/dev/null || \
+        die "govulncheck failed. Run 'go run golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION ./...' to see why."
+    echo "   ✅ govulncheck"
 
     go test ./... >/dev/null || die "Go tests failed. Run 'go test ./...' to see why."
     echo "   ✅ go test"
