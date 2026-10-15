@@ -191,7 +191,7 @@ go test ./...                     # the allowlist, the token and the pins
 
 A build from source reports its version as `dev`; the image reports its release tag.
 
-The image at the top of this file is composed by `bun scripts/docs-mockup.ts`, with [Bun](https://bun.sh) and a Lastboard checkout beside this one (or `LASTBOARD=/path/to/it`). The two hosts in it are invented: the script serves a small Docker API on two sockets and points two agents built from this repository at them.
+The image at the top of this file, and the one that opens the documentation, are rendered by `bun scripts/docs-mockup.ts`, with [Bun](https://bun.sh) and a Lastboard checkout beside this one (or `LASTBOARD=/path/to/it`). The two hosts in it are invented: the script serves a small Docker API on two sockets and points two agents built from this repository at them.
 
 ---
 

@@ -1,6 +1,9 @@
 /**
- * Renders assets/mockup.png — the image the README and the project page lead
- * with.
+ * Renders the two pictures of the agent that come from Lastboard's screen:
+ *
+ *   assets/mockup.png       the image the README and the project page lead with
+ *   docs/assets/widget.png  the Docker widget on its own, which the front page
+ *                           of the documentation opens with
  *
  *   bun scripts/docs-mockup.ts                 # Lastboard checked out at ../Lastboard
  *   LASTBOARD=/path/to/Lastboard bun scripts/docs-mockup.ts
@@ -16,13 +19,14 @@
  * Both programs are built before anything is photographed: a picture of the
  * interface as it was yesterday is worse than none, because nobody doubts it.
  */
-import { readFileSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, mkdirSync, rmSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const OUT = 'assets/mockup.png';
+const DOC_OUT = 'docs/assets/widget.png';
 const WIDTH = 1600, HEIGHT = 900, DPR = 2;
 const LASTBOARD = resolve(process.env.LASTBOARD || '../Lastboard');
 const LASTBOARD_BIN = join(LASTBOARD, 'bin/lastboard');
@@ -144,6 +148,20 @@ async function evaluate(expression: string) {
 }
 
 /**
+ * The Docker widget, searched through every shadow root rather than along one
+ * fixed path, so a change in how the board nests its tiles still finds it.
+ */
+const FIND_DOCKER = `
+    const find = (root) => {
+        const hit = root.querySelector('widget-docker');
+        if (hit) return hit;
+        for (const el of root.querySelectorAll('*')) {
+            if (el.shadowRoot) { const deep = find(el.shadowRoot); if (deep) return deep; }
+        }
+        return null;
+    };`;
+
+/**
  * Waits until the widget shows every container and every running one has its
  * figures — a condition, not a time. Not getting there is a failure with a
  * name, never a picture taken anyway.
@@ -152,16 +170,7 @@ async function waitForWidget(expected: number) {
     let last: any = null;
     for (let i = 0; i < 120; i++) {
         last = await evaluate(`
-            // Searched through every shadow root rather than along one fixed
-            // path, so a change in how the board nests its tiles still finds it.
-            const find = (root) => {
-                const hit = root.querySelector('widget-docker');
-                if (hit) return hit;
-                for (const el of root.querySelectorAll('*')) {
-                    if (el.shadowRoot) { const deep = find(el.shadowRoot); if (deep) return deep; }
-                }
-                return null;
-            };
+            ${FIND_DOCKER}
             const w = find(document)?.shadowRoot;
             if (!w) return { rows: 0, loading: -1, error: 'no docker widget on the page' };
             return {
@@ -204,6 +213,40 @@ async function shoot(app: string, w: number, h: number, dpr: number, touch: bool
     const png = await cdp('Page.captureScreenshot', { format: 'png' });
     writeFileSync(out, Buffer.from(png.result.data, 'base64'));
     console.log(`  ✓ ${touch ? 'tablet' : 'laptop'} screen ${w}x${h}@${dpr}`);
+}
+
+/**
+ * The Docker tile on its own, for the front page of the documentation: shot at
+ * the dashboard's own scale, then mounted, centred, on the board's background
+ * in the 1440x900 frame every figure of the house documentation shares.
+ */
+async function shootTile(out: string) {
+    const box = await evaluate(`
+        ${FIND_DOCKER}
+        const card = find(document)?.closest('.bookmark-grid__card');
+        if (!card) throw new Error('the Docker widget is not inside a tile');
+        const r = card.getBoundingClientRect();
+        return { x: r.left, y: r.top, width: r.width, height: r.height };`);
+    const png = await cdp('Page.captureScreenshot', { format: 'png', clip: { ...box, scale: 1 } });
+    writeFileSync(out, Buffer.from(png.result.data, 'base64'));
+
+    const mount = `
+import sys
+from PIL import Image
+src = Image.open(sys.argv[1]).convert('RGBA')
+W, H, MARGIN = 1440, 900, 72
+BG = (17, 17, 18, 255)                     # the board's own background
+k = min((W - 2 * MARGIN) / src.width, (H - 2 * MARGIN) / src.height)
+piece = src.resize((round(src.width * k), round(src.height * k)), Image.LANCZOS)
+canvas = Image.new('RGBA', (W, H), BG)
+canvas.paste(piece, ((W - piece.width) // 2, (H - piece.height) // 2), piece)
+canvas.convert('RGB').save(sys.argv[1])
+`;
+    const r = spawnSync('python3', ['-I', '-c', mount, out], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`mounting the tile failed (is Pillow installed?): ${r.stderr.trim()}`);
+    mkdirSync(dirname(DOC_OUT), { recursive: true });
+    copyFileSync(out, DOC_OUT);
+    console.log(`  ✓ ${DOC_OUT} 1440x900`);
 }
 
 // ── The run ─────────────────────────────────────────────────────────────────
@@ -305,6 +348,7 @@ async function main() {
     console.log('▶ photographing the board…');
     const desktop = join(WORK, 'desktop.png'), tablet = join(WORK, 'tablet.png');
     await shoot(app, 1280, 800, 2, false, true, expected, desktop);
+    await shootTile(join(WORK, 'tile.png'));
     await shoot(app, 1180, 820, 2, true, false, expected, tablet);
 
     // The screens are inlined rather than linked: a file:// page that goes

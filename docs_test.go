@@ -48,8 +48,8 @@ func TestDocsHaveAnOverviewThePageBuilderRecognises(t *testing.T) {
 	}
 }
 
-// Every folder is a section in the sidebar, and one that _meta.json does not
-// name shows up in alphabetical order under its folder name.
+// Every folder with pages is a section in the sidebar, and one that _meta.json
+// does not name shows up in alphabetical order under its folder name.
 func TestDocsMetaNamesEverySection(t *testing.T) {
 	raw, err := os.ReadFile("docs/_meta.json")
 	if err != nil {
@@ -71,9 +71,16 @@ func TestDocsMetaNamesEverySection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A section is a folder that holds pages. One that holds only pictures
+	// (docs/assets) is not in the sidebar, and naming it there would add an
+	// empty entry.
 	folders := map[string]bool{}
 	for _, e := range entries {
-		if e.IsDir() {
+		if !e.IsDir() {
+			continue
+		}
+		pages, _ := filepath.Glob(filepath.Join("docs", e.Name(), "*.md"))
+		if len(pages) > 0 {
 			folders[e.Name()] = true
 		}
 	}
@@ -99,9 +106,12 @@ func TestDocsMetaNamesEverySection(t *testing.T) {
 }
 
 var markdownLink = regexp.MustCompile(`\]\(([^)\s]+)\)`)
+var imageFile = regexp.MustCompile(`(?i)\.(png|webp|jpe?g|gif)$`)
 
 // A link to another page is rewritten to its published route by the site, and
-// to a page that does not exist it is rewritten just the same.
+// to a page that does not exist it is rewritten just the same. A picture is
+// fetched from the repository when the site builds, and a missing one stops
+// that build.
 func TestDocsLinksPointToPagesThatExist(t *testing.T) {
 	for _, page := range docPages(t) {
 		body, err := os.ReadFile(page)
@@ -114,9 +124,9 @@ func TestDocsLinksPointToPagesThatExist(t *testing.T) {
 				continue
 			}
 			path := strings.SplitN(target, "#", 2)[0]
-			if !strings.HasSuffix(path, ".md") {
-				t.Errorf("%s links to %q: a relative link here has to be another page (.md); "+
-					"the site only resolves those", page, target)
+			if !strings.HasSuffix(path, ".md") && !imageFile.MatchString(path) {
+				t.Errorf("%s links to %q: a relative link here has to be another page (.md) or "+
+					"a picture; the site resolves nothing else", page, target)
 				continue
 			}
 			resolved := filepath.Join(filepath.Dir(page), path)
