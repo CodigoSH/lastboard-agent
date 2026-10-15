@@ -1,0 +1,13 @@
+{
+  "overview": "Lastboard Agent Documentation",
+  "order": [
+    "getting-started",
+    "reference",
+    "help"
+  ],
+  "labels": {
+    "getting-started": "Getting started",
+    "reference": "Reference",
+    "help": "Help"
+  }
+}

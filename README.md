@@ -7,7 +7,7 @@
   <p><strong>Secure Docker bridge for Lastboard — monitor and control remote containers without exposing the Docker daemon.</strong></p>
 
   <p>
-    <a href="https://codigosh.com/docs/lastboard/widgets/docker/">
+    <a href="https://codigosh.com/docs/lastboard-agent/">
       <img src="https://img.shields.io/badge/Documentation-1a1a2e?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Documentation" />
     </a>
     &nbsp;
@@ -38,7 +38,7 @@
 
 ---
 
-📖 **[Read the Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/)** for the Lastboard side: adding hosts, choosing containers and what each row shows. This README covers the agent itself.
+📖 **[Read the Official Documentation](https://codigosh.com/docs/lastboard-agent/)** for the installation guide, the API reference and troubleshooting.
 
 ---
 
@@ -163,6 +163,8 @@ docker run -d --name lastboard-agent --restart unless-stopped -p 2375:2375 \
 4. In **Host URL**, enter the host and port: `your-server-ip:2375`.
 5. In **Token**, enter the token you chose.
 6. **Save** the host, then **Save** the widget. The host's containers appear in the list.
+
+What the widget shows and what you can do from each row is in the [Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/).
 
 ---
 
