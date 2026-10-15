@@ -38,6 +38,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 # agent touches and the API is reduced to an allowlist — so this is the
 # controlled surface, not a privileged free-for-all. The allowlist is what
 # limits it: mounting the socket read-only does not stop requests through it.
-# To run unprivileged instead, add the host's docker GID via `group_add`
-# (see docker-compose.yml).
+# To run unprivileged instead, set a user AND add the group that owns the
+# socket with `group_add`: the image defines no user, so `group_add` alone
+# leaves it root (see docker-compose.yml).
 ENTRYPOINT ["lastboard-agent"]

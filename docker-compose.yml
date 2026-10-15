@@ -9,7 +9,10 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
-    # Optional hardening — run unprivileged instead of root by granting only
-    # the host's docker group. Find the GID with: getent group docker
+    # Optional hardening — run unprivileged instead of root. The image runs as
+    # root unless a user is set, so BOTH lines are needed: the user, and the
+    # group that owns the socket. Find its number with:
+    #   stat -c %g /var/run/docker.sock
+    # user: "65534:65534"
     # group_add:
     #   - "988"

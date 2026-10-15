@@ -37,7 +37,8 @@ It cannot create, delete or enter one, and it cannot compromise the host.
   from being written through it; it is in the examples as good practice. The limit
   is the allowlist above.
 - **It runs as root in the container**, because it has to read the Docker socket.
-  To run it unprivileged, grant only the host's `docker` group with `group_add` (see
+  To run it unprivileged, set a user and give it the group that owns the socket, with
+  `user` and `group_add` together: `group_add` alone leaves it root (see
   `docker-compose.yml`).
 - **The port is yours to restrict.** Limit it in your firewall to the Lastboard host
   and use a strong random token (`openssl rand -hex 32`). The agent warns at startup

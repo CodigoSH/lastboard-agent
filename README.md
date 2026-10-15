@@ -91,7 +91,7 @@ The token is compared in constant time, and on every route but `/health` a reque
 That limit is the agent's allowlist, not the mount: `:ro` on a Unix socket stops nothing from being written through it. It is in the examples as good practice, not as the protection.
 
 - Restrict the agent's port in your firewall to the Lastboard host.
-- The agent runs as `root` inside the container so it can read the Docker socket. To run it unprivileged, grant only the host's `docker` group with `group_add` (see [docker-compose.yml](docker-compose.yml)).
+- The agent runs as `root` inside the container so it can read the Docker socket. To run it unprivileged, set a user and give it the group that owns the socket — `user` and `group_add` together, since `group_add` alone leaves it root (see [docker-compose.yml](docker-compose.yml) and the [installation guide](https://codigosh.com/docs/lastboard-agent/getting-started/installation/)).
 
 ### Privacy
 
