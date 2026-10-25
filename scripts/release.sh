@@ -85,11 +85,7 @@ OTHER_PRODUCTS=(LastHelp LastGYM LastDAV)
 RELEASE_BRANCH="main"
 # Pinned, and pinned to the same value .forgejo/workflows/tests.yml uses: a
 # checker that is not the one CI runs proves nothing about CI.
-# A pseudo-version, deliberately: the last tagged release reads the compiler's export
-# data up to format 4 and Go 1.27.2 writes format 5, so every package that imports the
-# standard library fails to load. The commit is exact and immutable on the module proxy;
-# it goes back to a tagged release the day one reads format 5.
-STATICCHECK_VERSION="v0.7.0-0.dev.0.20261009230814-452d5bb86b45"
+STATICCHECK_VERSION="v0.8.2"
 
 # The vulnerability scan is a preflight step because of where it fails: in CI it turns
 # the repository red after the tag is public, here it stops the release before anything
