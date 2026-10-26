@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -12,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -115,6 +119,14 @@ func newHandler(token, socketPath string) http.Handler {
 	docker.Handle("POST /containers/{id}/stop", requireValidID(onlyQuery(nil, nil, proxy)))
 	docker.Handle("POST /containers/{id}/restart", requireValidID(onlyQuery(nil, nil, proxy)))
 
+	// Read-only, for the Docker page: one container's details and its recent
+	// log lines. The details leave with the environment reduced to the
+	// variables' names — the values are where passwords and keys live, and
+	// they never leave this machine. The logs are a bounded batch, never a
+	// stream: follow is forced off and tail is capped.
+	docker.Handle("GET /containers/{id}/json", requireValidID(onlyQuery(nil, nil, newInspectProxy(socketPath))))
+	docker.Handle("GET /containers/{id}/logs", requireValidID(boundedLogs(newLogsProxy(socketPath))))
+
 	mux := http.NewServeMux()
 
 	// Health endpoint — public, no auth required. It carries the version so
@@ -156,6 +168,118 @@ func newDockerProxy(socketPath string) *httputil.ReverseProxy {
 		writeJSONError(w, http.StatusBadGateway, "docker unreachable")
 	}
 	return proxy
+}
+
+// maxInspect and maxLogs bound what one answer from the daemon may weigh as it
+// passes through. A container's details are a few kilobytes; a thousand log
+// lines rarely reach a megabyte.
+const (
+	maxInspect = 2 << 20
+	maxLogs    = 4 << 20
+)
+
+// newInspectProxy forwards a container's details with each environment
+// variable cut down to its name. An answer that cannot be read as the details
+// is not passed on as it came: it might carry the values.
+func newInspectProxy(socketPath string) *httputil.ReverseProxy {
+	proxy := newDockerProxy(socketPath)
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode != http.StatusOK {
+			return nil
+		}
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxInspect+1))
+		resp.Body.Close()
+		if err != nil || len(raw) > maxInspect {
+			return errUnreadableDetails
+		}
+		out, err := withoutEnvValues(raw)
+		if err != nil {
+			return errUnreadableDetails
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(out))
+		resp.ContentLength = int64(len(out))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(out)))
+		return nil
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("docker proxy error: %v", err)
+		if errors.Is(err, errUnreadableDetails) {
+			writeJSONError(w, http.StatusBadGateway, "unreadable container details")
+			return
+		}
+		writeJSONError(w, http.StatusBadGateway, "docker unreachable")
+	}
+	return proxy
+}
+
+var errUnreadableDetails = errors.New("container details could not be read")
+
+// withoutEnvValues rewrites Config.Env from ["NAME=value", …] to ["NAME", …].
+func withoutEnvValues(raw []byte) ([]byte, error) {
+	var details map[string]any
+	if err := json.Unmarshal(raw, &details); err != nil {
+		return nil, err
+	}
+	if config, ok := details["Config"].(map[string]any); ok {
+		if env, ok := config["Env"].([]any); ok {
+			names := make([]any, 0, len(env))
+			for _, e := range env {
+				if s, ok := e.(string); ok {
+					name, _, _ := strings.Cut(s, "=")
+					names = append(names, name)
+				}
+			}
+			config["Env"] = names
+		}
+	}
+	return json.Marshal(details)
+}
+
+// newLogsProxy forwards a batch of log lines, cut off at maxLogs.
+func newLogsProxy(socketPath string) *httputil.ReverseProxy {
+	proxy := newDockerProxy(socketPath)
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		resp.Body = struct {
+			io.Reader
+			io.Closer
+		}{io.LimitReader(resp.Body, maxLogs), resp.Body}
+		resp.ContentLength = -1
+		resp.Header.Del("Content-Length")
+		return nil
+	}
+	return proxy
+}
+
+// maxLogTail is the most lines one request may ask for.
+const maxLogTail = 1000
+
+var logSince = regexp.MustCompile(`^[0-9]{1,12}(\.[0-9]{1,9})?$`)
+
+// boundedLogs keeps only what Lastboard asks of the logs — which streams, with
+// timestamps, how many lines, since when — and forces the rest: never follow,
+// never more than maxLogTail lines.
+func boundedLogs(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		in := r.URL.Query()
+		out := url.Values{}
+		for _, key := range []string{"stdout", "stderr", "timestamps"} {
+			if v := in.Get(key); v == "1" || v == "true" {
+				out.Set(key, "1")
+			}
+		}
+		tail := 100
+		if n, err := strconv.Atoi(in.Get("tail")); err == nil && n > 0 {
+			tail = min(n, maxLogTail)
+		}
+		out.Set("tail", strconv.Itoa(tail))
+		if since := in.Get("since"); logSince.MatchString(since) {
+			out.Set("since", since)
+		}
+		out.Set("follow", "0")
+		r = r.Clone(r.Context())
+		r.URL.RawQuery = out.Encode()
+		next.ServeHTTP(w, r)
+	})
 }
 
 // authMiddleware validates the Bearer token from the Authorization header.

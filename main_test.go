@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -20,14 +21,29 @@ const testToken = "0123456789abcdef0123456789abcdef"
 type fakeDocker struct {
 	mu   sync.Mutex
 	hits []*http.Request
+	// answers, by path, what the daemon says; anything else gets {}.
+	answers map[string]string
 }
 
 func (f *fakeDocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.hits = append(f.hits, r)
+	answer, ok := f.answers[r.URL.Path]
 	f.mu.Unlock()
+	if !ok {
+		answer = `{}`
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{}`))
+	w.Write([]byte(answer))
+}
+
+func (f *fakeDocker) answer(path, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.answers == nil {
+		f.answers = map[string]string{}
+	}
+	f.answers[path] = body
 }
 
 func (f *fakeDocker) received() []*http.Request {
@@ -88,6 +104,8 @@ func TestAllowedRoutesReachDocker(t *testing.T) {
 		{"POST", "/containers/abc123/start"},
 		{"POST", "/containers/my_app.web-1/stop"},
 		{"POST", "/containers/abc123/restart"},
+		{"GET", "/containers/abc123/json"},
+		{"GET", "/containers/abc123/logs?stdout=1&stderr=1&timestamps=1&tail=100"},
 	}
 	for _, c := range allowed {
 		if got := call(t, agent, c.method, c.path, testToken); got != http.StatusOK {
@@ -123,9 +141,10 @@ func TestEverythingElseIsRefused(t *testing.T) {
 		{"POST", "/exec/abc123/start"},
 		{"DELETE", "/containers/abc123"},
 		{"POST", "/containers/abc123/kill"},
-		{"GET", "/containers/abc123/logs"},
-		{"GET", "/containers/abc123/json"},
 		{"POST", "/containers/json"},
+		{"GET", "/containers/abc123/archive"},
+		{"GET", "/containers/abc123/export"},
+		{"GET", "/containers/abc123/top"},
 		{"GET", "/images/json"},
 		{"POST", "/images/create"},
 		{"GET", "/version"},
@@ -237,6 +256,10 @@ func TestOnlyKnownQueryParametersReachDocker(t *testing.T) {
 		{"POST", "/containers/abc123/start?detachKeys=ctrl-x", ""},
 		{"POST", "/containers/abc123/stop?t=999999&signal=SIGKILL", ""},
 		{"POST", "/containers/abc123/restart?t=999999", ""},
+		// Logs: never followed, at most a thousand lines, since only as a time.
+		{"GET", "/containers/abc123/logs?stdout=1&stderr=1&timestamps=1&tail=50&follow=1&details=1&until=9", "follow=0&stderr=1&stdout=1&tail=50&timestamps=1"},
+		{"GET", "/containers/abc123/logs?stdout=1&tail=999999&since=1700000000.123456789", "follow=0&since=1700000000.123456789&stdout=1&tail=1000"},
+		{"GET", "/containers/abc123/logs?stdout=1&tail=all&since=yesterday", "follow=0&stdout=1&tail=100"},
 	}
 	for _, c := range cases {
 		call(t, agent, c.method, c.path, testToken)
@@ -303,5 +326,61 @@ func TestWeakTokenWarning(t *testing.T) {
 		if msg := weakTokenWarning(fine); msg != "" {
 			t.Errorf("token of length %d warned: %s", len(fine), msg)
 		}
+	}
+}
+
+// A container's details leave the agent with the environment reduced to the
+// variables' names: the values are where passwords live, and they stay here.
+func TestDetailsLeaveWithoutTheEnvironmentsValues(t *testing.T) {
+	agent, docker := newAgent(t)
+	docker.answer("/containers/abc123/json", `{"Id":"abc123","Name":"/db","Config":{"Image":"postgres","Env":["POSTGRES_PASSWORD=hunter2","PATH=/usr/bin","EMPTY="]}}`)
+
+	req, _ := http.NewRequest("GET", agent.URL+"/containers/abc123/json", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got struct {
+		Name   string
+		Config struct {
+			Image string
+			Env   []string
+		}
+	}
+	raw := new(strings.Builder)
+	if err := json.NewDecoder(io.TeeReader(resp.Body, raw)).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if strings.Contains(raw.String(), "hunter2") {
+		t.Fatalf("a value left the agent: %s", raw.String())
+	}
+	if strings.Join(got.Config.Env, ",") != "POSTGRES_PASSWORD,PATH,EMPTY" || got.Name != "/db" || got.Config.Image != "postgres" {
+		t.Errorf("details = %+v, want the names and everything else as it was", got)
+	}
+}
+
+// Details the agent cannot read are not passed on as they came.
+func TestUnreadableDetailsAreNotPassedOn(t *testing.T) {
+	agent, docker := newAgent(t)
+	docker.answer("/containers/abc123/json", `not json, POSTGRES_PASSWORD=hunter2`)
+	req, _ := http.NewRequest("GET", agent.URL+"/containers/abc123/json", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("unreadable details = %d, want 502", resp.StatusCode)
+	}
+	// Docker answered, so the reason is not that it could not be reached.
+	if !strings.Contains(string(body), "unreadable container details") {
+		t.Errorf("unreadable details said %q, want it named as such", body)
+	}
+	if strings.Contains(string(body), "hunter2") {
+		t.Errorf("the value got through: %q", body)
 	}
 }

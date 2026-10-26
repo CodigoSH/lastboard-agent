@@ -48,7 +48,7 @@ Generate a real one with `openssl rand -hex 32`, set it in the container and in 
 
 ## A call returns `404` or `405`
 
-The agent only answers the [five calls](../reference/api.md) and `/health`. Docker's other calls — creating or deleting a container, running a command in one, images, volumes, networks — do not exist in the agent, on purpose, so they answer `404`. A call that exists with the wrong method answers `405`, and its `Allow` header lists the right ones. A path with a version in front, like `/v1.41/containers/json`, is a `404` too: leave the version out.
+The agent only answers the [seven calls](../reference/api.md) and `/health`. Docker's other calls — creating or deleting a container, running a command in one, images, volumes, networks — do not exist in the agent, on purpose, so they answer `404`. A call that exists with the wrong method answers `405`, and its `Allow` header lists the right ones. A path with a version in front, like `/v1.41/containers/json`, is a `404` too: leave the version out.
 
 A `404` whose body is Docker's own message comes from Docker: the container you named does not exist.
 

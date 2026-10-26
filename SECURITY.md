@@ -13,13 +13,15 @@ Lastboard Agent runs next to Docker on a host you own and answers one dashboard,
 Lastboard, over HTTP. The Docker API is the keys to the host, so the design is a
 small allowlist rather than a proxy:
 
-- **Five calls and nothing else.** List containers, read a container's CPU and
-  memory, and start, stop or restart one. Anything else is refused even with a
+- **Seven calls and nothing else.** List containers, read a container's CPU and
+  memory, its details or the last lines of its log, and start, stop or restart
+  one. The details leave without the values of the environment variables, which
+  are often passwords; an answer that cannot be stripped of them is not passed on. Anything else is refused even with a
   valid token: no creating, deleting or `exec`-ing into containers, no images,
   volumes or networks.
 - **The query string is allowlisted too.** Only `all` reaches the list, stats are
-  always a single reading, and start, stop and restart take none, so a leaked
-  token cannot hold a stats stream open, make the daemon size every container on
+  always a single reading, logs are always a batch of at most 1000 lines, and
+  start, stop and restart take none, so a leaked token cannot hold a stream open, make the daemon size every container on
   disk, or stop one with a timeout of days.
 - **A token on every request**, compared in constant time. On every route but
   `/health` a request without the right one gets `401` whatever it asks for, so a
@@ -28,7 +30,8 @@ small allowlist rather than a proxy:
 - **A container ID that is not a plausible ID or name** stops at the agent with
   `400`, before anything reaches the socket.
 
-What a leaked token gives away is the lifecycle of containers that already exist.
+What a leaked token gives away is the lifecycle of containers that already exist,
+and what they write to their logs.
 It cannot create, delete or enter one, and it cannot compromise the host.
 
 ## What it does not claim

@@ -1,6 +1,6 @@
 # Lastboard Agent Documentation
 
-Lastboard Agent is a small bridge you run next to Docker on another host, so Lastboard can list its containers, read their CPU and memory, and start, stop or restart them — without the Docker daemon ever being exposed to the network.
+Lastboard Agent is a small bridge you run next to Docker on another host, so Lastboard can list its containers, read their CPU, memory, details and logs, and start, stop or restart them — without the Docker daemon ever being exposed to the network.
 
 ![Lastboard's Docker widget listing the containers of two hosts, each reached through its own agent](assets/widget.png)
 
@@ -13,14 +13,14 @@ your dashboard                        port 2375, one variable             stays 
 
 Exposing a machine's Docker API over TCP hands the keys to that machine to anyone who can reach the port: they can start a privileged container and own it. The agent exists so you never have to. It sits on the remote host, reads the local Docker socket, and answers Lastboard over HTTP with a token on every request.
 
-It is not a general proxy. It is an **allowlist of five calls**: list containers, read one container's stats, and start, stop or restart one. Anything else is refused, even with a valid token.
+It is not a general proxy. It is an **allowlist of seven calls**: list containers, read one container's stats, details or logs, and start, stop or restart one. The details leave without the values of the environment variables. Anything else is refused, even with a valid token.
 
 It stores nothing and has no configuration files. One environment variable, `TOKEN`, is all it needs, and you can restart or replace it at any time.
 
 ## Where to start
 
 - **[Installation](getting-started/installation.md)** — the compose file, the one-line `docker run`, the image tags, and how to run it without root.
-- **[API reference](reference/api.md)** — the five calls, what is dropped from the query string, every status code, and what a leaked token can and cannot do.
+- **[API reference](reference/api.md)** — the seven calls, what is dropped from the query string, every status code, and what a leaked token can and cannot do.
 - **[Troubleshooting](help/troubleshooting.md)** — what you see when something is wrong, and what causes it.
 
 The other half of the setup lives in Lastboard: adding a host to the Docker widget is covered in the [Docker widget guide](/docs/lastboard/widgets/docker/).
