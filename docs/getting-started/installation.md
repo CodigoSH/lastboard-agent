@@ -87,6 +87,22 @@ curl http://your-server:2375/health
 
 In Lastboard, enter edit mode, add a **Docker** widget (or open an existing one), choose **Add New Host**, pick **Lastboard Agent** as its type, and enter the host and port, `your-server-ip:2375`, and the token. The [Docker widget guide](/docs/lastboard/widgets/docker/) walks through the screen and what each row shows.
 
+## With Podman
+
+Podman answers the same API through a socket of its own. With rootless Podman, turn the socket on once, as the user that runs your containers, and mount it where Docker's would be:
+
+```bash
+systemctl --user enable --now podman.socket
+
+podman run -d --name lastboard-agent -p 2375:2375 \
+  -e TOKEN=your_secure_random_token \
+  -v $XDG_RUNTIME_DIR/podman/podman.sock:/var/run/docker.sock \
+  --security-opt label=disable \
+  git.codigosh.com/codigosh/lastboard-agent:latest
+```
+
+Without `--security-opt label=disable`, on a host where SELinux is enforcing, the agent cannot open the socket and every call that needs Docker answers `502` with `docker unreachable`. Leave the user as it is: in rootless Podman the container's root is your own user, the one that owns the socket, so it gives nothing away. The [Docker widget guide](/docs/lastboard/widgets/docker/#podman) has a Quadlet file to run it as a service.
+
 ## Behind a reverse proxy
 
 The agent speaks plain HTTP, so on its own the token crosses the network in the clear. If the host is not on a network you trust, put the agent behind a reverse proxy that terminates TLS, and make sure the proxy forwards the `Authorization` header untouched: without it every request is unauthenticated and the agent answers `401`. In Lastboard, type the address with `https://` so the widget reaches it over HTTPS — the widget guide explains how.
@@ -111,7 +127,7 @@ and add both to the compose file (`999` stands for the number you got):
 
 Both are needed. `group_add` alone changes nothing, because the container is still root. And a non-root user without the group cannot read the socket: the agent starts and stays `healthy`, but every call that needs Docker answers `502`.
 
-On a host where SELinux is enforcing, the container can be denied access to the socket even as root. With Podman's socket this was solved by adding `--security-opt label=disable`; check what your own policy and engine need.
+On a host where SELinux is enforcing, the container can be denied access to the socket even as root: [With Podman](#with-podman) has the option that allows it.
 
 ## Updating
 
