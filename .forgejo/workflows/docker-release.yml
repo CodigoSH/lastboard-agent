@@ -46,17 +46,39 @@ jobs:
         id: vars
         run: echo "image=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
+      - name: Decide which moving tags this version may take
+        id: moving
+        run: |
+          # A moving tag goes only to the newest version of its kind. A tag pushed
+          # again for an old release (a history rewrite does that) must not take
+          # `latest` back to it: on 24-oct-2026 a re-pushed v1.0.6 did, and
+          # `:latest` served a June image for days.
+          this="${GITHUB_REF_NAME#v}"
+          names=$(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/v##')
+          newest() { printf '%s\n' "$names" | grep -E "$1" | sort -V | tail -n 1; }
+          stable=$(newest '^[0-9]+\.[0-9]+\.[0-9]+$')
+          beta=$(newest '^[0-9]+\.[0-9]+\.[0-9]+-[Bb]eta')
+          rc=$(newest '^[0-9]+\.[0-9]+\.[0-9]+-(RC|rc)')
+          [ "$this" = "$stable" ] && echo "latest=true" >> "$GITHUB_OUTPUT" || echo "latest=false" >> "$GITHUB_OUTPUT"
+          [ "$this" = "$beta" ] && echo "beta=true" >> "$GITHUB_OUTPUT" || echo "beta=false" >> "$GITHUB_OUTPUT"
+          [ "$this" = "$rc" ] && echo "rc=true" >> "$GITHUB_OUTPUT" || echo "rc=false" >> "$GITHUB_OUTPUT"
+          echo "v$this — newest stable v$stable, beta v$beta, rc v$rc"
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ steps.vars.outputs.image }}
+          # `latest` is decided by the step above and nowhere else: the action's
+          # own `latest=auto` would add it to any stable version it is given.
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
-            type=raw,value=beta,enable=${{ contains(github.ref, 'Beta') }}
-            type=raw,value=rc,enable=${{ contains(github.ref, 'RC') }}
+            type=raw,value=latest,enable=${{ steps.moving.outputs.latest == 'true' }}
+            type=raw,value=beta,enable=${{ steps.moving.outputs.beta == 'true' }}
+            type=raw,value=rc,enable=${{ steps.moving.outputs.rc == 'true' }}
             type=ref,event=tag
 
       - name: Login to registry
