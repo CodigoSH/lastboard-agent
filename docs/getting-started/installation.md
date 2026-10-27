@@ -101,7 +101,7 @@ podman run -d --name lastboard-agent -p 2375:2375 \
   git.codigosh.com/codigosh/lastboard-agent:latest
 ```
 
-Without `--security-opt label=disable`, on a host where SELinux is enforcing, the agent cannot open the socket and every call that needs Docker answers `502` with `docker unreachable`. Leave the user as it is: in rootless Podman the container's root is your own user, the one that owns the socket, so it gives nothing away. The [Docker widget guide](/docs/lastboard/widgets/docker/#podman) has a Quadlet file to run it as a service.
+Without `--security-opt label=disable`, on a host where SELinux is enforcing, the agent cannot open the socket and every call that needs Docker answers `502` with `docker unreachable`. Leave the user as it is: in rootless Podman the container's root is your own user, the one that owns the socket, so it gives nothing away. The [Podman guide](/docs/lastboard/podman/overview/) has a Quadlet file to run it as a service.
 
 ## Behind a reverse proxy
 
