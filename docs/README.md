@@ -23,7 +23,7 @@ It stores nothing and has no configuration files. One environment variable, `TOK
 - **[API reference](reference/api.md)** — the seven calls, what is dropped from the query string, every status code, and what a leaked token can and cannot do.
 - **[Troubleshooting](help/troubleshooting.md)** — what you see when something is wrong, and what causes it.
 
-The other half of the setup lives in Lastboard: adding a host to the Docker widget is covered in the [Docker widget guide](/docs/lastboard/widgets/docker/).
+The other half of the setup lives in Lastboard: adding a host is covered in the [Docker guide](/docs/lastboard/docker/overview/).
 
 ## What it does not do
 

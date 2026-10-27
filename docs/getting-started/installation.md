@@ -85,7 +85,7 @@ curl http://your-server:2375/health
 
 ## Add it to Lastboard
 
-In Lastboard, enter edit mode, add a **Docker** widget (or open an existing one), choose **Add New Host**, pick **Lastboard Agent** as its type, and enter the host and port, `your-server-ip:2375`, and the token. The [Docker widget guide](/docs/lastboard/widgets/docker/) walks through the screen and what each row shows.
+In Lastboard, open **Settings → Docker**, choose **+ Add New Host**, pick **Lastboard Agent** as its type, and enter the host and port, `your-server-ip:2375`, and the token. The [Docker guide](/docs/lastboard/docker/overview/) walks through the screen, and the [Docker widget guide](/docs/lastboard/widgets/docker/) what each row shows.
 
 ## With Podman
 

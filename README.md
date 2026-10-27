@@ -158,14 +158,14 @@ docker run -d --name lastboard-agent --restart unless-stopped -p 2375:2375 \
 
 ## Connecting to Lastboard
 
-1. In Lastboard, enter edit mode and add a **Docker** widget, or open the settings of an existing one.
-2. Click **Add New Host**.
+1. In Lastboard, open **Settings → Docker**.
+2. Click **+ Add New Host**.
 3. Give it a **Name**, and choose **Lastboard Agent** as its **Type**.
 4. In **Host URL**, enter the host and port: `your-server-ip:2375`.
 5. In **Token**, enter the token you chose.
-6. **Save** the host, then **Save** the widget. The host's containers appear in the list.
+6. **Save** the host. Every Docker widget can now show its containers, and the Docker page lists them too.
 
-What the widget shows and what you can do from each row is in the [Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/).
+Adding hosts and what the Docker page shows are in the [Docker guide](https://codigosh.com/docs/lastboard/docker/overview/); what the widget shows and what you can do from each row is in the [Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/).
 
 ---
 
