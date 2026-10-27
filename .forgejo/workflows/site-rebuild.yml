@@ -8,6 +8,10 @@ on:
   push:
     branches: [main]
     paths:
+      # The site publishes this folder as the agent's documentation, so a change
+      # to it has to rebuild the site: without this a correction reached the web
+      # only when a release, or an unrelated push to the web itself, rebuilt it.
+      - 'docs/**'
       # So a change to this job proves itself on the push that makes it.
       - '.forgejo/workflows/site-rebuild.yml'
   workflow_dispatch:
