@@ -1,4 +1,4 @@
-name: Tests
+name: CI
 
 on:
   push:
@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Run Tests
+  ci:
+    name: Check, test and build
     runs-on: ubuntu-latest
     # Pinned rather than inherited: `ubuntu-latest` is whatever the runner
     # mapped it to the day it registered, which was a Debian from 2021.
@@ -35,6 +35,9 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+
+      - name: go mod tidy is clean
+        run: go mod tidy -diff
 
       - name: Vet
         run: go vet ./...

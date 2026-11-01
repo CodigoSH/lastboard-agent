@@ -83,13 +83,13 @@ fi
 OTHER_PRODUCTS=(LastHelp LastGYM LastDAV)
 
 RELEASE_BRANCH="main"
-# Pinned, and pinned to the same value .forgejo/workflows/tests.yml uses: a
+# Pinned, and pinned to the same value .forgejo/workflows/ci.yml uses: a
 # checker that is not the one CI runs proves nothing about CI.
 STATICCHECK_VERSION="v0.8.2"
 
 # The vulnerability scan is a preflight step because of where it fails: in CI it turns
 # the repository red after the tag is public, here it stops the release before anything
-# is written. Pinned to the version tests.yml uses; the tool is pinned, the advisory
+# is written. Pinned to the version ci.yml uses; the tool is pinned, the advisory
 # database it reads is not, and that is the point.
 GOVULNCHECK_VERSION="v1.9.0"
 

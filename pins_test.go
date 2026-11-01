@@ -25,7 +25,7 @@ func TestGoVersionAgrees(t *testing.T) {
 	}{
 		{"go.mod", regexp.MustCompile(`(?m)^go ([0-9.]+)$`), "go X.Y.Z"},
 		{"Dockerfile", regexp.MustCompile(`golang:([0-9.]+)-alpine`), "FROM golang:X.Y.Z-alpine"},
-		{".forgejo/workflows/tests.yml", regexp.MustCompile(`go-version:\s*'([0-9.]+)'`), "go-version: 'X.Y.Z'"},
+		{".forgejo/workflows/ci.yml", regexp.MustCompile(`go-version:\s*'([0-9.]+)'`), "go-version: 'X.Y.Z'"},
 	}
 
 	found := map[string]string{}
@@ -67,7 +67,7 @@ func TestStaticcheckVersionAgrees(t *testing.T) {
 		find *regexp.Regexp
 	}{
 		{"scripts/release.sh", regexp.MustCompile(`STATICCHECK_VERSION="(v[0-9][0-9A-Za-z.\-]*)"`)},
-		{".forgejo/workflows/tests.yml", regexp.MustCompile(`honnef\.co/go/tools/cmd/staticcheck@(v[0-9][0-9A-Za-z.\-]*)`)},
+		{".forgejo/workflows/ci.yml", regexp.MustCompile(`honnef\.co/go/tools/cmd/staticcheck@(v[0-9][0-9A-Za-z.\-]*)`)},
 	}
 	found := map[string]string{}
 	for _, p := range pins {
@@ -81,8 +81,8 @@ func TestStaticcheckVersionAgrees(t *testing.T) {
 		}
 		found[p.file] = string(m[1])
 	}
-	if a, b := found["scripts/release.sh"], found[".forgejo/workflows/tests.yml"]; a != b {
-		t.Errorf("staticcheck is pinned to two versions: release.sh %s, tests.yml %s", a, b)
+	if a, b := found["scripts/release.sh"], found[".forgejo/workflows/ci.yml"]; a != b {
+		t.Errorf("staticcheck is pinned to two versions: release.sh %s, ci.yml %s", a, b)
 	}
 }
 
@@ -94,7 +94,7 @@ func TestGovulncheckVersionAgrees(t *testing.T) {
 		find *regexp.Regexp
 	}{
 		{"scripts/release.sh", regexp.MustCompile(`GOVULNCHECK_VERSION="(v[0-9.]+)"`)},
-		{".forgejo/workflows/tests.yml", regexp.MustCompile(`golang\.org/x/vuln/cmd/govulncheck@(v[0-9.]+)`)},
+		{".forgejo/workflows/ci.yml", regexp.MustCompile(`golang\.org/x/vuln/cmd/govulncheck@(v[0-9.]+)`)},
 	}
 	found := map[string]string{}
 	for _, p := range pins {
@@ -108,8 +108,8 @@ func TestGovulncheckVersionAgrees(t *testing.T) {
 		}
 		found[p.file] = string(m[1])
 	}
-	if a, b := found["scripts/release.sh"], found[".forgejo/workflows/tests.yml"]; a != b {
-		t.Errorf("govulncheck is pinned to two versions: release.sh %s, tests.yml %s", a, b)
+	if a, b := found["scripts/release.sh"], found[".forgejo/workflows/ci.yml"]; a != b {
+		t.Errorf("govulncheck is pinned to two versions: release.sh %s, ci.yml %s", a, b)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestNothingIsPinnedToLatest(t *testing.T) {
 		"Dockerfile",
 		".forgejo/workflows/release.yml",
 		".forgejo/workflows/docker-release.yml",
-		".forgejo/workflows/tests.yml",
+		".forgejo/workflows/ci.yml",
 		".forgejo/workflows/site-rebuild.yml",
 		"scripts/release.sh",
 	}
