@@ -136,8 +136,8 @@ jobs:
 
   # The site reads the latest release from this repository's API at build
   # time, so it is rebuilt once the release exists — and only if it was
-  # published. Dispatched rather than done here, so the Coolify call lives in
-  # one place.
+  # published. Dispatched rather than done here, so how the site is rebuilt
+  # lives in one place: site-rebuild.yml.
   trigger-site-rebuild:
     name: Rebuild the website
     needs: release
