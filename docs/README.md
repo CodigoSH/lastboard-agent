@@ -13,14 +13,14 @@ your dashboard                        port 2375, one variable             stays 
 
 Exposing a machine's Docker API over TCP hands the keys to that machine to anyone who can reach the port: they can start a privileged container and own it. The agent exists so you never have to. It sits on the remote host, reads the local Docker socket, and answers Lastboard over HTTP with a token on every request.
 
-It is not a general proxy. It is an **allowlist of seven calls**: list containers, read one container's stats, details or logs, and start, stop or restart one. The details leave without the values of the environment variables. Anything else is refused, even with a valid token.
+It is not a general proxy. It is an **allowlist of eight calls**: list containers, read one container's stats, details or logs, read the host's size, and start, stop or restart one. The details leave without the values of the environment variables. Anything else is refused, even with a valid token.
 
 It stores nothing and has no configuration files. One environment variable, `TOKEN`, is all it needs, and you can restart or replace it at any time.
 
 ## Where to start
 
 - **[Installation](getting-started/installation.md)** — the compose file, the one-line `docker run`, the image tags, and how to run it without root.
-- **[API reference](reference/api.md)** — the seven calls, what is dropped from the query string, every status code, and what a leaked token can and cannot do.
+- **[API reference](reference/api.md)** — the eight calls, what is dropped from the query string, every status code, and what a leaked token can and cannot do.
 - **[Troubleshooting](help/troubleshooting.md)** — what you see when something is wrong, and what causes it.
 
 The other half of the setup lives in Lastboard: adding a host is covered in the [Docker guide](/docs/lastboard/docker/overview/).

@@ -127,6 +127,12 @@ func newHandler(token, socketPath string) http.Handler {
 	docker.Handle("GET /containers/{id}/json", requireValidID(onlyQuery(nil, nil, newInspectProxy(socketPath))))
 	docker.Handle("GET /containers/{id}/logs", requireValidID(boundedLogs(newLogsProxy(socketPath))))
 
+	// Read-only, for the overview: how big the machine is, so that the CPU and
+	// memory of its containers can be read against something. Docker's own
+	// answer describes the whole host — its name, kernel, registries, swarm —
+	// and only the two figures leave.
+	docker.Handle("GET /info", onlyQuery(nil, nil, newInfoProxy(socketPath)))
+
 	mux := http.NewServeMux()
 
 	// Health endpoint — public, no auth required. It carries the version so
@@ -213,6 +219,57 @@ func newInspectProxy(socketPath string) *httputil.ReverseProxy {
 }
 
 var errUnreadableDetails = errors.New("container details could not be read")
+
+// maxInfo bounds what is read of the daemon's description of its host.
+const maxInfo = 1 << 20
+
+var errUnreadableInfo = errors.New("host information could not be read")
+
+// newInfoProxy forwards the daemon's description of its host cut down to the
+// number of processors and the memory. An answer that cannot be read as that
+// description is not passed on as it came: it might carry far more.
+func newInfoProxy(socketPath string) *httputil.ReverseProxy {
+	proxy := newDockerProxy(socketPath)
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode != http.StatusOK {
+			return nil
+		}
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxInfo+1))
+		resp.Body.Close()
+		if err != nil || len(raw) > maxInfo {
+			return errUnreadableInfo
+		}
+		out, err := onlyCapacity(raw)
+		if err != nil {
+			return errUnreadableInfo
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(out))
+		resp.ContentLength = int64(len(out))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(out)))
+		return nil
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("docker proxy error: %v", err)
+		if errors.Is(err, errUnreadableInfo) {
+			writeJSONError(w, http.StatusBadGateway, "unreadable host information")
+			return
+		}
+		writeJSONError(w, http.StatusBadGateway, "docker unreachable")
+	}
+	return proxy
+}
+
+// onlyCapacity keeps NCPU and MemTotal of the daemon's answer, and nothing else.
+func onlyCapacity(raw []byte) ([]byte, error) {
+	var info struct {
+		NCPU     int   `json:"NCPU"`
+		MemTotal int64 `json:"MemTotal"`
+	}
+	if err := json.Unmarshal(raw, &info); err != nil {
+		return nil, err
+	}
+	return json.Marshal(info)
+}
 
 // withoutEnvValues rewrites Config.Env from ["NAME=value", …] to ["NAME", …].
 func withoutEnvValues(raw []byte) ([]byte, error) {

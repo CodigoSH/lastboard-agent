@@ -106,6 +106,7 @@ func TestAllowedRoutesReachDocker(t *testing.T) {
 		{"POST", "/containers/abc123/restart"},
 		{"GET", "/containers/abc123/json"},
 		{"GET", "/containers/abc123/logs?stdout=1&stderr=1&timestamps=1&tail=100"},
+		{"GET", "/info"},
 	}
 	for _, c := range allowed {
 		if got := call(t, agent, c.method, c.path, testToken); got != http.StatusOK {
@@ -126,6 +127,56 @@ func TestAllowedRoutesReachDocker(t *testing.T) {
 	}
 	if got := hits[0].URL.Query().Get("all"); got != "true" {
 		t.Errorf("list lost its query: all=%q, want \"true\"", got)
+	}
+}
+
+// The daemon describes its whole host; the agent lets two figures of it out.
+func TestInfoLeavesOnlyTheCapacity(t *testing.T) {
+	agent, docker := newAgent(t)
+	docker.answer("/info", `{"ID":"SECRET-ID","Name":"prod-1","NCPU":8,"MemTotal":16777216000,"KernelVersion":"6.1","RegistryConfig":{"Secret":"x"},"Swarm":{"NodeID":"abc","RemoteManagers":[{"Addr":"10.0.0.1:2377"}]}}`)
+
+	req, _ := http.NewRequest("GET", agent.URL+"/info?x=1", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("answer is not JSON: %v: %s", err, body)
+	}
+	if len(got) != 2 || got["NCPU"] != float64(8) || got["MemTotal"] != float64(16777216000) {
+		t.Errorf("answer = %v, want only NCPU 8 and MemTotal 16777216000", got)
+	}
+	for _, leak := range []string{"SECRET", "prod-1", "10.0.0.1", "Swarm", "Registry"} {
+		if strings.Contains(string(body), leak) {
+			t.Errorf("the answer carries %q", leak)
+		}
+	}
+	if q := docker.received()[0].URL.RawQuery; q != "" {
+		t.Errorf("the query reached the daemon: %q", q)
+	}
+}
+
+// An answer that is not the description of a host is not passed on as it came.
+func TestUnreadableInfoIsNotForwarded(t *testing.T) {
+	agent, docker := newAgent(t)
+	docker.answer("/info", `not json, but with a secret in it`)
+	req, _ := http.NewRequest("GET", agent.URL+"/info", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadGateway || strings.Contains(string(body), "secret") {
+		t.Errorf("status %d, body %q: want 502 without the original text", resp.StatusCode, body)
 	}
 }
 
