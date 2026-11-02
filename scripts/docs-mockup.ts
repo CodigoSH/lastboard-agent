@@ -1,32 +1,34 @@
 /**
- * Renders the two pictures of the agent that come from Lastboard's screen:
+ * Renders the pictures of the agent that come from Lastboard's screen:
  *
- *   assets/mockup.png       the image the README and the project page lead with
- *   docs/assets/widget.png  the Docker widget on its own, which the front page
- *                           of the documentation opens with
+ *   assets/mockup.png            the image the README and the project page lead with
+ *   docs/assets/docker-page.png  Lastboard's Docker page on its own, which the front
+ *                                page of the documentation opens with
+ *   docs/assets/docker-panel.png the same page with a container's panel open
  *
  *   bun scripts/docs-mockup.ts                 # Lastboard checked out at ../Lastboard
  *   LASTBOARD=/path/to/Lastboard bun scripts/docs-mockup.ts
  *
  * The agent has no screen of its own, so what is photographed is what it makes
- * possible: Lastboard's Docker widget listing two hosts, each reached through
- * an agent built from this repository. The hosts are not real. A small Docker
- * API is served on two Unix sockets with containers invented for the picture,
- * and the agents are pointed at those sockets exactly as they would be at
+ * possible: Lastboard's Docker page listing two hosts, each reached through an
+ * agent built from this repository. The hosts are not real. A small Docker API
+ * is served on two Unix sockets with containers invented for the picture, and
+ * the agents are pointed at those sockets exactly as they would be at
  * /var/run/docker.sock — so every row on the screen went through this code, and
  * nobody's actual containers end up in a published image.
  *
  * Both programs are built before anything is photographed: a picture of the
  * interface as it was yesterday is worse than none, because nobody doubts it.
  */
-import { readFileSync, mkdirSync, rmSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const OUT = 'assets/mockup.png';
-const DOC_OUT = 'docs/assets/widget.png';
+const DOC_OUT = 'docs/assets/docker-page.png';
+const DOC_PANEL_OUT = 'docs/assets/docker-panel.png';
 const WIDTH = 1600, HEIGHT = 900, DPR = 2;
 const LASTBOARD = resolve(process.env.LASTBOARD || '../Lastboard');
 const LASTBOARD_BIN = join(LASTBOARD, 'bin/lastboard');
@@ -64,42 +66,67 @@ async function waitFor(url: string, what: string) {
 interface FakeContainer {
     name: string; image: string; running: boolean; up: string;
     ports?: number[]; cpu: number; memMiB: number;
+    /** The Compose project it was started by. */
+    project?: string;
+    /** What its own check says, when it has one. */
+    health?: 'healthy' | 'unhealthy';
+    /** How a stopped one ended. */
+    exit?: number;
 }
 
-const HOSTS: { id: string; name: string; containers: FakeContainer[] }[] = [
+interface FakeHost {
+    id: string; name: string; containers: FakeContainer[];
+    /** What the daemon says of its host, and what it holds on disk (bytes). */
+    cpus: number; memGiB: number;
+    disk: { images: number; volumes: number; cache: number };
+}
+
+const GiB = 1024 ** 3, MiB = 1024 ** 2;
+
+const HOSTS: FakeHost[] = [
     {
-        id: 'nas', name: 'Home server', containers: [
-            { name: 'jellyfin', image: 'jellyfin/jellyfin:10.10', running: true, up: 'Up 12 days', ports: [8096], cpu: 6.4, memMiB: 812 },
-            { name: 'immich-server', image: 'ghcr.io/immich-app/immich-server:release', running: true, up: 'Up 12 days', ports: [2283], cpu: 3.1, memMiB: 1240 },
-            { name: 'immich-postgres', image: 'postgres:16-alpine', running: true, up: 'Up 12 days', cpu: 0.8, memMiB: 214 },
-            { name: 'vaultwarden', image: 'vaultwarden/server:1.32', running: true, up: 'Up 12 days', ports: [8222], cpu: 0.2, memMiB: 38 },
-            { name: 'syncthing', image: 'syncthing/syncthing:1.29', running: true, up: 'Up 4 days', ports: [8384], cpu: 1.7, memMiB: 96 },
-            { name: 'nextcloud', image: 'nextcloud:30-apache', running: false, up: 'Exited (0) 2 hours ago', cpu: 0, memMiB: 0 },
+        id: 'nas', name: 'Home server', cpus: 8, memGiB: 16,
+        disk: { images: 11.4 * GiB, volumes: 7.6 * GiB, cache: 2.1 * GiB },
+        containers: [
+            { name: 'jellyfin', image: 'jellyfin/jellyfin:10.10', running: true, up: 'Up 12 days (healthy)', health: 'healthy', ports: [8096], cpu: 81.9, memMiB: 812, project: 'media' },
+            { name: 'immich-server', image: 'ghcr.io/immich-app/immich-server:release', running: true, up: 'Up 12 days (healthy)', health: 'healthy', ports: [2283], cpu: 39.7, memMiB: 1240, project: 'immich' },
+            { name: 'immich-postgres', image: 'postgres:16-alpine', running: true, up: 'Up 12 days (healthy)', health: 'healthy', cpu: 10.2, memMiB: 214, project: 'immich' },
+            { name: 'immich-redis', image: 'redis:7-alpine', running: true, up: 'Up 12 days', cpu: 3.8, memMiB: 24, project: 'immich' },
+            { name: 'vaultwarden', image: 'vaultwarden/server:1.32', running: true, up: 'Up 12 days (healthy)', health: 'healthy', ports: [8222], cpu: 2.6, memMiB: 38 },
+            { name: 'syncthing', image: 'syncthing/syncthing:1.29', running: true, up: 'Up 4 days', ports: [8384], cpu: 21.8, memMiB: 96 },
+            { name: 'paperless-worker', image: 'ghcr.io/paperless-ngx/paperless-ngx:2.13', running: false, up: 'Exited (137) 2 hours ago', exit: 137, cpu: 0, memMiB: 0, project: 'paperless' },
+            { name: 'nextcloud', image: 'nextcloud:30-apache', running: false, up: 'Exited (0) 3 days ago', exit: 0, cpu: 0, memMiB: 0 },
         ],
     },
     {
-        id: 'vps', name: 'Cloud VPS', containers: [
-            { name: 'caddy', image: 'caddy:2-alpine', running: true, up: 'Up 31 days', ports: [443], cpu: 0.4, memMiB: 42 },
-            { name: 'uptime-kuma', image: 'louislam/uptime-kuma:1', running: true, up: 'Up 31 days', ports: [3001], cpu: 2.2, memMiB: 148 },
-            { name: 'freshrss', image: 'freshrss/freshrss:1.25', running: true, up: 'Up 9 days', ports: [8080], cpu: 0.3, memMiB: 61 },
+        id: 'vps', name: 'Cloud VPS', cpus: 4, memGiB: 4,
+        disk: { images: 2.3 * GiB, volumes: 0.9 * GiB, cache: 0.4 * GiB },
+        containers: [
+            { name: 'caddy', image: 'caddy:2-alpine', running: true, up: 'Up 31 days', ports: [443], cpu: 5.1, memMiB: 42 },
+            { name: 'uptime-kuma', image: 'louislam/uptime-kuma:1', running: true, up: 'Up 31 days (healthy)', health: 'healthy', ports: [3001], cpu: 28.2, memMiB: 148 },
+            { name: 'freshrss', image: 'freshrss/freshrss:1.25', running: true, up: 'Up 9 days (unhealthy)', health: 'unhealthy', ports: [8080], cpu: 3.8, memMiB: 61 },
         ],
     },
 ];
 
-const idOf = (host: string, name: string) =>
-    Array.from(new Bun.CryptoHasher('sha256').update(`${host}/${name}`).digest('hex')).join('');
+const idOf = (host: string, name: string) => new Bun.CryptoHasher('sha256').update(`${host}/${name}`).digest('hex');
+
+/** A reading that moves a little with the clock, so the page's history is a line and not a ruler. */
+const wobble = (base: number, name: string) => base * (1 + 0.22 * Math.sin(Date.now() / 7000 + name.length));
 
 /**
  * The part of the Docker Engine API the agent forwards, answering for one
  * invented host. Stats carry a delta between two readings, as Docker's do, so
  * the dashboard's CPU arithmetic is the real one.
  */
-function serveFakeDocker(socket: string, host: typeof HOSTS[number]) {
+function serveFakeDocker(socket: string, host: FakeHost) {
     const byId = (id: string) => host.containers.find((c) => idOf(host.id, c.name).startsWith(id));
+    const started = (c: FakeContainer) => new Date(Date.now() - (parseInt(c.up.match(/\d+/)?.[0] || '1', 10) * 86400_000)).toISOString();
     return Bun.serve({
         unix: socket,
         fetch(req) {
-            const path = new URL(req.url).pathname;
+            const url = new URL(req.url);
+            const path = url.pathname;
             if (req.method === 'GET' && path === '/containers/json') {
                 return Response.json(host.containers.map((c, i) => ({
                     Id: idOf(host.id, c.name),
@@ -109,19 +136,70 @@ function serveFakeDocker(socket: string, host: typeof HOSTS[number]) {
                     Status: c.up,
                     Created: 1756000000 + i * 3600,
                     Ports: (c.ports || []).map((p) => ({ IP: '0.0.0.0', PrivatePort: p, PublicPort: p, Type: 'tcp' })),
-                    Labels: {},
+                    Labels: c.project ? { 'com.docker.compose.project': c.project } : {},
                 })));
+            }
+            if (req.method === 'GET' && path === '/info') {
+                return Response.json({ ID: 'invented', Name: host.name, NCPU: host.cpus, MemTotal: Math.round(host.memGiB * GiB), KernelVersion: '6.8.0' });
+            }
+            if (req.method === 'GET' && path === '/system/df') {
+                const n = host.containers.length;
+                return Response.json({
+                    LayersSize: Math.round(host.disk.images),
+                    Images: Array.from({ length: n }, (_, i) => ({ Size: Math.round(host.disk.images / n), SharedSize: 0, Containers: i % 4 === 3 ? 0 : 1 })),
+                    Containers: host.containers.map((c) => ({ SizeRw: c.running ? 0 : 60 * MiB, State: c.running ? 'running' : 'exited' })),
+                    Volumes: [
+                        { UsageData: { Size: Math.round(host.disk.volumes * 0.8), RefCount: 1 } },
+                        { UsageData: { Size: Math.round(host.disk.volumes * 0.2), RefCount: 0 } },
+                    ],
+                    BuildCache: [{ Size: Math.round(host.disk.cache), InUse: false }],
+                });
             }
             const stats = path.match(/^\/containers\/([^/]+)\/stats$/);
             if (req.method === 'GET' && stats) {
                 const c = byId(stats[1]);
                 if (!c) return new Response('{"message":"No such container"}', { status: 404 });
-                const system = 1_000_000_000, cpus = 4;
+                const system = 1_000_000_000, cpus = host.cpus;
+                const cpu = wobble(c.cpu, c.name);
                 return Response.json({
-                    cpu_stats: { cpu_usage: { total_usage: 5_000_000_000 + Math.round(c.cpu / 100 / cpus * system) }, system_cpu_usage: 90_000_000_000 + system, online_cpus: cpus },
+                    cpu_stats: { cpu_usage: { total_usage: 5_000_000_000 + Math.round(cpu / 100 * system) }, system_cpu_usage: 90_000_000_000 + system * cpus, online_cpus: cpus },
                     precpu_stats: { cpu_usage: { total_usage: 5_000_000_000 }, system_cpu_usage: 90_000_000_000 },
-                    memory_stats: { usage: c.memMiB * 1024 * 1024, limit: 16 * 1024 * 1024 * 1024 },
+                    memory_stats: { usage: Math.round(wobble(c.memMiB, c.name + 'm') * MiB), limit: Math.round(host.memGiB * GiB) },
                 });
+            }
+            const one = path.match(/^\/containers\/([^/]+)\/json$/);
+            if (req.method === 'GET' && one) {
+                const c = byId(one[1]);
+                if (!c) return new Response('{"message":"No such container"}', { status: 404 });
+                return Response.json({
+                    Id: idOf(host.id, c.name), Name: `/${c.name}`, Created: started(c),
+                    State: {
+                        Status: c.running ? 'running' : 'exited', ExitCode: c.exit ?? 0, StartedAt: started(c), FinishedAt: c.running ? '0001-01-01T00:00:00Z' : new Date(Date.now() - 7200_000).toISOString(),
+                        ...(c.health ? { Health: { Status: c.health } } : {}),
+                    },
+                    RestartCount: 0,
+                    Config: { Image: c.image, Env: ['TZ=Europe/Lisbon', 'PUID=1000'], Tty: true },
+                    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+                    Mounts: c.name === 'jellyfin' ? [{ Type: 'bind', Source: '/srv/media', Destination: '/media', RW: false }, { Type: 'volume', Name: 'jellyfin-config', Source: '/var/lib/docker/volumes/jellyfin-config/_data', Destination: '/config', RW: true }] : [{ Type: 'volume', Name: `${c.name}-data`, Source: `/var/lib/docker/volumes/${c.name}-data/_data`, Destination: '/data', RW: true }],
+                    NetworkSettings: {
+                        Ports: Object.fromEntries((c.ports || []).map((p) => [`${p}/tcp`, [{ HostIp: '0.0.0.0', HostPort: String(p) }]])),
+                        Networks: { [c.project ? `${c.project}_default` : 'bridge']: { IPAddress: '172.18.0.' + (2 + host.containers.indexOf(c)) } },
+                    },
+                });
+            }
+            const logs = path.match(/^\/containers\/([^/]+)\/logs$/);
+            if (req.method === 'GET' && logs) {
+                const c = byId(logs[1]);
+                if (!c) return new Response('{"message":"No such container"}', { status: 404 });
+                const now = Date.now();
+                const lines = [
+                    'starting up', `listening on :${(c.ports || [8080])[0]}`, 'loaded configuration from /config', 'database is ready',
+                    'GET /health 200 2ms', 'GET /api/status 200 4ms', 'GET /health 200 1ms',
+                    ...(c.health === 'unhealthy' ? ['health check failed: connection refused', 'health check failed: connection refused'] : ['GET /health 200 2ms']),
+                    ...(c.exit === 137 ? ['worker killed: out of memory'] : []),
+                ];
+                const body = lines.map((l, i) => `${new Date(now - (lines.length - i) * 20_000).toISOString()} ${l}`).join('\n') + '\n';
+                return new Response(body, { headers: { 'Content-Type': 'text/plain' } });
             }
             if (req.method === 'POST' && /^\/containers\/[^/]+\/(start|stop|restart)$/.test(path)) {
                 return new Response(null, { status: 204 });
@@ -148,105 +226,116 @@ async function evaluate(expression: string) {
 }
 
 /**
- * The Docker widget, searched through every shadow root rather than along one
- * fixed path, so a change in how the board nests its tiles still finds it.
+ * An element of the dashboard, searched through every shadow root rather than
+ * along one fixed path, so a change in how the page nests its parts still finds it.
  */
-const FIND_DOCKER = `
-    const find = (root) => {
-        const hit = root.querySelector('widget-docker');
+const FIND = `
+    const find = (root, sel) => {
+        const hit = root.querySelector(sel);
         if (hit) return hit;
         for (const el of root.querySelectorAll('*')) {
-            if (el.shadowRoot) { const deep = find(el.shadowRoot); if (deep) return deep; }
+            if (el.shadowRoot) { const deep = find(el.shadowRoot, sel); if (deep) return deep; }
         }
         return null;
     };`;
 
+/** Opens the Docker page from the top bar, as a person would, and leaves it on its first tab. */
+async function openDockerPage() {
+    await evaluate(`
+        ${FIND}
+        for (let i = 0; i < 60 && !find(document, '[title="Docker"]'); i++) await new Promise((r) => setTimeout(r, 250));
+        const button = find(document, '[title="Docker"]');
+        if (!button) throw new Error('no Docker button in the top bar — are the hosts saved?');
+        (button.closest('button') || button).click();`);
+}
+
+/** The tab with this id, clicked. */
+async function openTab(id: string) {
+    await evaluate(`
+        ${FIND}
+        const tab = find(document, 'docker-page').shadowRoot.querySelector('#tabs [data-tab="${id}"]');
+        if (!tab) throw new Error('no tab ${id} on the Docker page');
+        tab.click();`);
+}
+
 /**
- * Waits until the widget shows every container and every running one has its
- * figures — a condition, not a time. Not getting there is a failure with a
- * name, never a picture taken anyway.
+ * Waits until the page shows what the picture needs — a condition, not a time.
+ * Not getting there is a failure with a name and a screenshot of what was on
+ * screen, never a picture taken anyway.
  */
-async function waitForWidget(expected: number) {
+async function waitFor_(what: string, condition: string) {
     let last: any = null;
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 160; i++) {
         last = await evaluate(`
-            ${FIND_DOCKER}
-            const w = find(document)?.shadowRoot;
-            if (!w) return { rows: 0, loading: -1, error: 'no docker widget on the page' };
-            return {
-                rows: w.querySelectorAll('.cell-name').length,
-                loading: w.querySelectorAll('.stats-text.is-loading').length,
-                error: w.querySelector('.state-view .state-text')?.textContent || '',
-            };`);
-        if (last && last.rows === expected && last.loading === 0) return;
+            ${FIND}
+            const root = find(document, 'docker-page')?.shadowRoot;
+            if (!root) return { ok: false, why: 'no Docker page on the screen' };
+            ${condition}`);
+        if (last?.ok) return;
         await sleep(250);
     }
-    // What was on screen instead, so the failure says more than its own name.
     const shot = await cdp('Page.captureScreenshot', { format: 'png' });
     writeFileSync(join(WORK, 'failed.png'), Buffer.from(shot.result.data, 'base64'));
-    const href = await evaluate(`return location.href;`);
-    throw new Error(`the Docker widget never settled at ${href}: ${JSON.stringify(last)} ` +
-        `(expected ${expected} rows) — what was on screen is in ${join(WORK, 'failed.png')}`);
+    throw new Error(`${what} never settled: ${JSON.stringify(last)} — what was on screen is in ${join(WORK, 'failed.png')}`);
 }
+
+/** The overview: four indicators with their figures, the session's chart drawn, and the attention list. */
+const overviewReady = (rows: number) => waitFor_('the overview', `
+    const kpis = [...root.querySelectorAll('.kpi__v')].map((e) => e.textContent.trim());
+    const chart = !!root.querySelector('.chart svg path');
+    const attention = root.querySelectorAll('.attn__row').length;
+    return { ok: kpis.length === 4 && kpis.every((k) => k && k !== '—') && chart && attention > 0, kpis, chart, attention };`);
+
+/** The list: every container is a card, and every running one has its figures. */
+const listReady = (rows: number) => waitFor_('the container list', `
+    const cards = root.querySelectorAll('.unit').length;
+    const loading = root.querySelectorAll('.unit .is-loading, .unit [class*="loading"]').length;
+    return { ok: cards === ${rows} && loading === 0, cards, loading };`);
 
 /**
  * One screen. `touch` is a tablet: touch input at a width where the dashboard
- * still lays out the full grid (below 768px it shows bookmarks only). `fit`
- * crops the height to the board, so the laptop does not frame an empty floor.
+ * still lays out in full (below 768px it shows bookmarks only).
  */
-async function shoot(app: string, w: number, h: number, dpr: number, touch: boolean, fit: boolean, expected: number, out: string) {
+async function shoot(app: string, w: number, h: number, dpr: number, touch: boolean, tab: 'overview' | 'containers', rows: number, out: string) {
     await cdp('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dpr, mobile: touch });
     await cdp('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: touch ? 5 : 0 });
     await cdp('Page.navigate', { url: app });
-    await waitForWidget(expected);
+    await sleep(1500);
+    await openDockerPage();
+    await overviewReady(rows);
+    if (tab === 'containers') { await openTab('containers'); await listReady(rows); }
     await evaluate(`await document.fonts.ready;`);
-    await sleep(600); // the entrance animation of the tiles
-    if (fit) {
-        const bottom = await evaluate(`
-            const cards = [...document.querySelector('bookmark-grid').shadowRoot.querySelectorAll('.bookmark-grid__card')];
-            if (!cards.length) throw new Error('no cards on the board to fit the height to');
-            return Math.ceil(Math.max(...cards.map((c) => c.getBoundingClientRect().bottom)) + 28);`);
-        h = Math.min(h, bottom);
-        await cdp('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dpr, mobile: touch });
-        await sleep(300);
-    }
+    await sleep(900); // the entrance animation of the page
     const png = await cdp('Page.captureScreenshot', { format: 'png' });
     writeFileSync(out, Buffer.from(png.result.data, 'base64'));
-    console.log(`  ✓ ${touch ? 'tablet' : 'laptop'} screen ${w}x${h}@${dpr}`);
+    console.log(`  ✓ ${touch ? 'tablet' : 'laptop'} ${tab} ${w}x${h}@${dpr}`);
 }
 
-/**
- * The Docker tile on its own, for the front page of the documentation: shot at
- * the dashboard's own scale, then mounted, centred, on the board's background
- * in the 1440x900 frame every figure of the house documentation shares.
- */
-async function shootTile(out: string) {
-    const box = await evaluate(`
-        ${FIND_DOCKER}
-        const card = find(document)?.closest('.bookmark-grid__card');
-        if (!card) throw new Error('the Docker widget is not inside a tile');
-        const r = card.getBoundingClientRect();
-        return { x: r.left, y: r.top, width: r.width, height: r.height };`);
-    const png = await cdp('Page.captureScreenshot', { format: 'png', clip: { ...box, scale: 1 } });
+/** The page with one container's panel open on its first tab. */
+async function shootPanel(app: string, rows: number, container: string, out: string) {
+    await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await cdp('Emulation.setTouchEmulationEnabled', { enabled: false, maxTouchPoints: 0 });
+    await cdp('Page.navigate', { url: app });
+    await sleep(1500);
+    await openDockerPage();
+    await overviewReady(rows);
+    await openTab('containers');
+    await listReady(rows);
+    await evaluate(`
+        ${FIND}
+        const root = find(document, 'docker-page').shadowRoot;
+        const card = [...root.querySelectorAll('.unit')].find((u) => u.textContent.includes('${container}'));
+        if (!card) throw new Error('no card for ${container}');
+        card.click();`);
+    await waitFor_('the container panel', `
+        const on = root.getElementById('drawer')?.classList.contains('on');
+        const facts = root.querySelectorAll('#dr-body .fact, #dr-body .facts > *').length;
+        const figures = [...root.querySelectorAll('#dr-body .kpi__v, #dr-body .live3 b, #dr-body .card b')].some((b) => /%/.test(b.textContent));
+        return { ok: on && facts > 0 && figures, on, facts, figures };`);
+    await sleep(900);
+    const png = await cdp('Page.captureScreenshot', { format: 'png' });
     writeFileSync(out, Buffer.from(png.result.data, 'base64'));
-
-    const mount = `
-import sys
-from PIL import Image
-src = Image.open(sys.argv[1]).convert('RGBA')
-W, H, MARGIN = 1440, 900, 72
-BG = (17, 17, 18, 255)                     # the board's own background
-k = min((W - 2 * MARGIN) / src.width, (H - 2 * MARGIN) / src.height)
-piece = src.resize((round(src.width * k), round(src.height * k)), Image.LANCZOS)
-canvas = Image.new('RGBA', (W, H), BG)
-canvas.paste(piece, ((W - piece.width) // 2, (H - piece.height) // 2), piece)
-canvas.convert('RGB').save(sys.argv[1])
-`;
-    const r = spawnSync('python3', ['-I', '-c', mount, out], { encoding: 'utf8' });
-    if (r.status !== 0) throw new Error(`mounting the tile failed (is Pillow installed?): ${r.stderr.trim()}`);
-    mkdirSync(dirname(DOC_OUT), { recursive: true });
-    copyFileSync(out, DOC_OUT);
-    console.log(`  ✓ ${DOC_OUT} 1440x900`);
+    console.log(`  ✓ ${out} 1440x900`);
 }
 
 // ── The run ─────────────────────────────────────────────────────────────────
@@ -286,8 +375,8 @@ async function main() {
         agents.push({ host, port, token });
     }
 
-    // A throwaway Lastboard with one board: the Docker widget, and the two
-    // widgets that need nothing from outside this machine.
+    // A throwaway Lastboard whose account has the two hosts, as it would after
+    // Settings → Docker, and a board with only a clock on it.
     const lbPort = await freePort();
     const app = `http://localhost:${lbPort}/`;
     const db = join(WORK, 'lastboard.db');
@@ -303,24 +392,25 @@ async function main() {
         body: JSON.stringify({ username: 'demo', password: 'Lastboard123!' }),
     });
     const cookies = Object.fromEntries((login.headers.getSetCookie?.() || []).map((c) => c.split(';')[0].split('=')));
-    if (!cookies.session_token) throw new Error('could not sign in to the throwaway Lastboard');
+    if (!cookies.session_token || !cookies.csrf_token) throw new Error('could not sign in to the throwaway Lastboard');
+
+    const saved = await fetch(`${app}api/docker/settings`, {
+        method: 'POST',
+        // A write from a page carries the session and echoes the CSRF token, as the page itself does.
+        headers: { 'Content-Type': 'application/json', Cookie: `session_token=${cookies.session_token}; csrf_token=${cookies.csrf_token}`, 'X-CSRF-Token': cookies.csrf_token },
+        body: JSON.stringify({
+            hosts: agents.map(({ host, port, token }) => ({ id: host.id, name: host.name, type: 'agent', url: `127.0.0.1:${port}`, token, enabled: true })),
+        }),
+    });
+    if (!saved.ok) throw new Error(`saving the Docker hosts failed: ${saved.status} ${await saved.text()}`);
 
     const { Database } = await import('bun:sqlite');
     const sql = new Database(db);
     sql.run(`DELETE FROM items`);
     sql.run(`INSERT INTO dashboards (user_id, name, position, is_default) VALUES (1, 'Main dashboard', 0, 1)`);
     const board = (sql.query(`SELECT id FROM dashboards WHERE is_default = 1`).get() as { id: number }).id;
-    const widget = (x: number, y: number, w: number, h: number, content: unknown) =>
-        sql.run(`INSERT INTO items (user_id, type, x, y, w, h, content, dashboard_id) VALUES (1, 'widget', ?, ?, ?, ?, ?, ?)`,
-            [x, y, w, h, JSON.stringify(content), board]);
-    widget(1, 1, 8, 5, {
-        widgetId: 'docker',
-        title: 'Containers',
-        hosts: agents.map(({ host, port, token }) => ({ id: host.id, name: host.name, type: 'agent', url: `127.0.0.1:${port}`, token })),
-        activeHost: agents[0].host.id,
-    });
-    widget(9, 1, 4, 2, { widgetId: 'clock', city: 'Lisbon', timezone: 'Europe/Lisbon', hour12: false, showDate: true, showSeconds: false, showCity: true });
-    widget(9, 3, 4, 3, { widgetId: 'telemetry', interval: 2000 });
+    sql.run(`INSERT INTO items (user_id, type, x, y, w, h, content, dashboard_id) VALUES (1, 'widget', 1, 1, 4, 2, ?, ?)`,
+        [JSON.stringify({ widgetId: 'clock', city: 'Lisbon', timezone: 'Europe/Lisbon', hour12: false, showDate: true, showSeconds: false, showCity: true }), board]);
     sql.close();
 
     const expected = HOSTS.reduce((n, h) => n + h.containers.length, 0);
@@ -345,11 +435,12 @@ async function main() {
         await cdp('Network.setCookie', { name, value, domain: 'localhost', path: '/' });
     }
 
-    console.log('▶ photographing the board…');
+    console.log('▶ photographing the Docker page…');
     const desktop = join(WORK, 'desktop.png'), tablet = join(WORK, 'tablet.png');
-    await shoot(app, 1280, 800, 2, false, true, expected, desktop);
-    await shootTile(join(WORK, 'tile.png'));
-    await shoot(app, 1180, 820, 2, true, false, expected, tablet);
+    await shoot(app, 1280, 800, 2, false, 'overview', expected, desktop);
+    await shoot(app, 1180, 820, 2, true, 'containers', expected, tablet);
+    await shoot(app, 1440, 900, 1, false, 'overview', expected, DOC_OUT);
+    await shootPanel(app, expected, 'jellyfin', DOC_PANEL_OUT);
 
     // The screens are inlined rather than linked: a file:// page that goes
     // looking for them mid-render is a composition that sometimes ships with

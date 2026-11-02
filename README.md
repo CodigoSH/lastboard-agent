@@ -18,7 +18,7 @@
 
   <br />
 
-  <img src="assets/mockup.png" alt="Lastboard Agent — Lastboard's Docker widget listing the containers of two hosts, each reached through an agent, on a laptop and a tablet" width="92%" style="border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);" />
+  <img src="assets/mockup.png" alt="Lastboard Agent — Lastboard's Docker page listing the containers of two hosts, each reached through an agent, on a laptop and a tablet" width="92%" style="border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);" />
 
   <br /><br />
 
@@ -68,7 +68,8 @@ It runs next to Docker on the remote host, reads the local socket, and answers L
 - **Read CPU and memory** for each one.
 - **Read a container's details and its log**: image, state, ports, mounts, networks and restart policy, and the last lines it wrote. The environment travels as names only: the values never leave the host.
 - **Start, stop and restart** a container from its row in the dashboard.
-- **Many hosts, one widget**: put an agent on each machine and Lastboard lists them together, each row naming where it runs.
+- **Read the host's size and what Docker holds on disk**: its processors — and its real cores, where the kernel lists them — its memory, and the sizes of Docker's images, volumes and build cache. Sizes and counts only: no names, tags or paths.
+- **Many hosts, one page**: put an agent on each machine and Lastboard lists them together on its Docker page and in its Docker widget, each row naming where it runs.
 
 ### What it refuses
 
@@ -163,7 +164,7 @@ docker run -d --name lastboard-agent --restart unless-stopped -p 2375:2375 \
 3. Give it a **Name**, and choose **Lastboard Agent** as its **Type**.
 4. In **Host URL**, enter the host and port: `your-server-ip:2375`.
 5. In **Token**, enter the token you chose.
-6. **Save** the host. Every Docker widget can now show its containers, and the Docker page lists them too.
+6. **Save** the host. The Docker page lists its containers, and every Docker widget can show them too.
 
 Adding hosts and what the Docker page shows are in the [Docker guide](https://codigosh.com/docs/lastboard/docker/overview/); what the widget shows and what you can do from each row is in the [Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/).
 
@@ -192,7 +193,7 @@ go test ./...                     # the allowlist, the token and the pins
 
 A build from source reports its version as `dev`; the image reports its release tag.
 
-The image at the top of this file, and the one that opens the documentation, are rendered by `bun scripts/docs-mockup.ts`, with [Bun](https://bun.sh) and a Lastboard checkout beside this one (or `LASTBOARD=/path/to/it`). The two hosts in it are invented: the script serves a small Docker API on two sockets and points two agents built from this repository at them.
+The image at the top of this file, and the two that open the documentation, are rendered by `bun scripts/docs-mockup.ts`, with [Bun](https://bun.sh) and a Lastboard checkout beside this one (or `LASTBOARD=/path/to/it`). The two hosts in it are invented: the script serves a small Docker API on two sockets and points two agents built from this repository at them.
 
 ---
 

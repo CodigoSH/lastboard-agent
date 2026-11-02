@@ -2,7 +2,7 @@
 
 Lastboard Agent is a small bridge you run next to Docker on another host, so Lastboard can list its containers, read their CPU, memory, details and logs, and start, stop or restart them — without the Docker daemon ever being exposed to the network.
 
-![Lastboard's Docker widget listing the containers of two hosts, each reached through its own agent](assets/widget.png)
+![Lastboard's Docker page: the overview of two hosts, each reached through its own agent — containers, CPU, memory, what Docker holds on disk, and what needs attention](assets/docker-page.png)
 
 ## How it fits
 
@@ -24,6 +24,8 @@ It stores nothing and has no configuration files. One environment variable, `TOK
 - **[Troubleshooting](help/troubleshooting.md)** — what you see when something is wrong, and what causes it.
 
 The other half of the setup lives in Lastboard: adding a host is covered in the [Docker guide](/docs/lastboard/docker/overview/).
+
+![A container's panel on Lastboard's Docker page: its CPU and memory, its health, restart policy, image and published ports, and the buttons that restart or stop it](assets/docker-panel.png)
 
 ## What it does not do
 
