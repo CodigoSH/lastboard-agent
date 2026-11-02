@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -133,6 +135,10 @@ func TestAllowedRoutesReachDocker(t *testing.T) {
 
 // The daemon describes its whole host; the agent lets two figures of it out.
 func TestInfoLeavesOnlyTheCapacity(t *testing.T) {
+	// With no core list to read, the answer is exactly the daemon's two figures.
+	old := cpuInfoPath
+	cpuInfoPath = filepath.Join(t.TempDir(), "absent")
+	defer func() { cpuInfoPath = old }()
 	agent, docker := newAgent(t)
 	docker.answer("/info", `{"ID":"SECRET-ID","Name":"prod-1","NCPU":8,"MemTotal":16777216000,"KernelVersion":"6.1","RegistryConfig":{"Secret":"x"},"Swarm":{"NodeID":"abc","RemoteManagers":[{"Addr":"10.0.0.1:2377"}]}}`)
 
@@ -501,5 +507,47 @@ func TestUnreadableDetailsAreNotPassedOn(t *testing.T) {
 	}
 	if strings.Contains(string(body), "hunter2") {
 		t.Errorf("the value got through: %q", body)
+	}
+}
+
+// Eight threads on four cores of one socket: the host says its cores, not just its threads.
+func TestPhysicalCoresAreCountedOncePerCore(t *testing.T) {
+	var list strings.Builder
+	for i := 0; i < 8; i++ {
+		fmt.Fprintf(&list, "processor\t: %d\nphysical id\t: 0\ncore id\t\t: %d\nmodel name\t: x\n\n", i, i%4)
+	}
+	// A second socket whose core numbers repeat the first's: they are other cores.
+	list.WriteString("processor\t: 8\nphysical id\t: 1\ncore id\t\t: 0\n\n")
+	path := filepath.Join(t.TempDir(), "cpuinfo")
+	if err := os.WriteFile(path, []byte(list.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := cpuInfoPath
+	cpuInfoPath = path
+	defer func() { cpuInfoPath = old }()
+	if got := physicalCores(); got != 5 {
+		t.Errorf("physicalCores = %d, want 5", got)
+	}
+	out, err := onlyCapacity([]byte(`{"NCPU":9,"MemTotal":1,"Name":"secret"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"PhysicalCores":5`) || strings.Contains(string(out), "secret") {
+		t.Errorf("answer = %s", out)
+	}
+}
+
+// A kernel that lists no core numbers leaves the figure out instead of guessing.
+func TestPhysicalCoresAreLeftOutWhenTheKernelDoesNotSay(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cpuinfo")
+	if err := os.WriteFile(path, []byte("processor\t: 0\nmodel name\t: x\n\nprocessor\t: 1\n\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := cpuInfoPath
+	cpuInfoPath = path
+	defer func() { cpuInfoPath = old }()
+	out, _ := onlyCapacity([]byte(`{"NCPU":2,"MemTotal":1}`))
+	if strings.Contains(string(out), "PhysicalCores") {
+		t.Errorf("answer = %s, want no PhysicalCores", out)
 	}
 }

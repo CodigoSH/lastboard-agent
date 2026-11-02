@@ -314,15 +314,61 @@ func onlySizes(raw []byte) ([]byte, error) {
 	return json.Marshal(in)
 }
 
-// onlyCapacity keeps NCPU and MemTotal of the daemon's answer, and nothing else.
+// cpuInfoPath is where the kernel lists the processors it sees. A variable so
+// a test can stand another file in its place.
+var cpuInfoPath = "/proc/cpuinfo"
+
+// physicalCores counts the cores of the host's processors, not their threads:
+// the distinct (socket, core) pairs the kernel lists. The daemon reports only
+// the threads, so a host that hyper-threads would read as twice its cores. 0
+// means the kernel did not say (some ARM boards and virtual machines list no
+// core numbers), and the figure is left out rather than guessed.
+func physicalCores() int {
+	raw, err := os.ReadFile(cpuInfoPath)
+	if err != nil {
+		return 0
+	}
+	cores := map[string]struct{}{}
+	socket, core, haveCore := "", "", false
+	flush := func() {
+		if haveCore {
+			cores[socket+"/"+core] = struct{}{}
+		}
+		socket, core, haveCore = "", "", false
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.TrimSpace(line) == "" {
+			flush()
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(key) {
+		case "physical id":
+			socket = strings.TrimSpace(value)
+		case "core id":
+			core, haveCore = strings.TrimSpace(value), true
+		}
+	}
+	flush()
+	return len(cores)
+}
+
+// onlyCapacity keeps NCPU and MemTotal of the daemon's answer, and adds the
+// host's physical cores when the kernel lists them. Nothing else leaves.
 func onlyCapacity(raw []byte) ([]byte, error) {
 	var info struct {
-		NCPU     int   `json:"NCPU"`
-		MemTotal int64 `json:"MemTotal"`
+		NCPU          int   `json:"NCPU"`
+		MemTotal      int64 `json:"MemTotal"`
+		PhysicalCores int   `json:"PhysicalCores,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &info); err != nil {
 		return nil, err
 	}
+	// Never the daemon's own word: only what this host's kernel says.
+	info.PhysicalCores = physicalCores()
 	return json.Marshal(info)
 }
 
