@@ -44,7 +44,7 @@
 
 ## Why Lastboard Agent
 
-Watching the containers of another machine from a dashboard usually means exposing that machine's Docker daemon over TCP, and the Docker API is the keys to the host: whoever can reach it can start a privileged container and own the machine. The agent was built with a simple rule: **Lastboard gets exactly the eight calls it uses, and nothing else reaches Docker.**
+Watching the containers of another machine from a dashboard usually means exposing that machine's Docker daemon over TCP, and the Docker API is the keys to the host: whoever can reach it can start a privileged container and own the machine. The agent was built with a simple rule: **Lastboard gets exactly the nine calls it uses, and nothing else reaches Docker.**
 
 It runs next to Docker on the remote host, reads the local socket, and answers Lastboard over HTTP with a token on every request. No database, no configuration files and no state: restart or replace it at any time.
 
@@ -72,7 +72,7 @@ It runs next to Docker on the remote host, reads the local socket, and answers L
 
 ### What it refuses
 
-- **Anything that is not one of those eight calls is refused**, even with a valid token — `404`, or `405` for a known path asked with the wrong method: no creating, deleting or `exec`-ing into containers, no images, no volumes, no networks.
+- **Anything that is not one of those nine calls is refused**, even with a valid token — `404`, or `405` for a known path asked with the wrong method: no creating, deleting or `exec`-ing into containers, no listing, pulling or deleting images, no volumes, no networks. The one call that touches that area, the disk-use summary, leaves as sizes and counts only: no names, tags, paths or build steps.
 - **Query parameters are allowlisted too.** Only `all` reaches the list, stats are always a single reading, logs are always a batch of at most 1000 lines, and start, stop and restart take none — so a leaked token cannot hold a stream open, make the daemon size every container on disk, or stop one with a timeout of days.
 - **A container ID that is not a plausible ID or name** stops at the agent with `400`, before anything reaches the socket.
 

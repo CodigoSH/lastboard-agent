@@ -107,6 +107,7 @@ func TestAllowedRoutesReachDocker(t *testing.T) {
 		{"GET", "/containers/abc123/json"},
 		{"GET", "/containers/abc123/logs?stdout=1&stderr=1&timestamps=1&tail=100"},
 		{"GET", "/info"},
+		{"GET", "/system/df"},
 	}
 	for _, c := range allowed {
 		if got := call(t, agent, c.method, c.path, testToken); got != http.StatusOK {
@@ -160,6 +161,73 @@ func TestInfoLeavesOnlyTheCapacity(t *testing.T) {
 	}
 	if q := docker.received()[0].URL.RawQuery; q != "" {
 		t.Errorf("the query reached the daemon: %q", q)
+	}
+}
+
+// The daemon names every image, volume and cache record it has; the agent lets
+// the sizes out and nothing that names anything.
+func TestDiskUsageLeavesOnlySizes(t *testing.T) {
+	agent, docker := newAgent(t)
+	docker.answer("/system/df", `{"LayersSize":5000,"Images":[{"Id":"sha256:SECRETID","RepoTags":["registry.corp/app:1"],"Size":3000,"SharedSize":1000,"Containers":0}],"Containers":[{"Id":"c1","Names":["/db-secret"],"SizeRw":40,"State":"exited","Mounts":[{"Source":"/srv/private"}]}],"Volumes":[{"Name":"vol-secret","Mountpoint":"/var/lib/docker/volumes/x","UsageData":{"Size":700,"RefCount":0}}],"BuildCache":[{"ID":"bc1","Description":"RUN secret","Size":90,"InUse":false}]}`)
+
+	req, _ := http.NewRequest("GET", agent.URL+"/system/df?type=volume", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	var got struct {
+		LayersSize int64
+		Images     []struct{ Size, SharedSize, Containers int64 }
+		Containers []struct {
+			SizeRw int64
+			State  string
+		}
+		Volumes []struct {
+			UsageData struct{ Size, RefCount int64 }
+		}
+		BuildCache []struct {
+			Size  int64
+			InUse bool
+		}
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("answer is not JSON: %v: %s", err, body)
+	}
+	if got.LayersSize != 5000 || got.Images[0].Size != 3000 || got.Images[0].SharedSize != 1000 ||
+		got.Containers[0].SizeRw != 40 || got.Containers[0].State != "exited" ||
+		got.Volumes[0].UsageData.Size != 700 || got.BuildCache[0].Size != 90 {
+		t.Errorf("sizes lost: %s", body)
+	}
+	for _, leak := range []string{"SECRET", "secret", "registry.corp", "/srv/private", "/var/lib", "RUN"} {
+		if strings.Contains(string(body), leak) {
+			t.Errorf("the answer carries %q", leak)
+		}
+	}
+	if q := docker.received()[0].URL.RawQuery; q != "" {
+		t.Errorf("the query reached the daemon: %q", q)
+	}
+}
+
+// An account of disk use that cannot be read is not passed on as it came.
+func TestUnreadableDiskUsageIsNotForwarded(t *testing.T) {
+	agent, docker := newAgent(t)
+	docker.answer("/system/df", `not json, but with a secret in it`)
+	req, _ := http.NewRequest("GET", agent.URL+"/system/df", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadGateway || strings.Contains(string(body), "secret") {
+		t.Errorf("status %d, body %q: want 502 without the original text", resp.StatusCode, body)
 	}
 }
 

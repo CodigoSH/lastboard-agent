@@ -133,6 +133,11 @@ func newHandler(token, socketPath string) http.Handler {
 	// and only the two figures leave.
 	docker.Handle("GET /info", onlyQuery(nil, nil, newInfoProxy(socketPath)))
 
+	// Read-only, for the overview: how much disk Docker itself uses. Only the
+	// sizes leave — not the image names and tags, the volume names and mount
+	// points, or the build cache's records.
+	docker.Handle("GET /system/df", onlyQuery(nil, nil, newDiskProxy(socketPath)))
+
 	mux := http.NewServeMux()
 
 	// Health endpoint — public, no auth required. It carries the version so
@@ -229,17 +234,35 @@ var errUnreadableInfo = errors.New("host information could not be read")
 // number of processors and the memory. An answer that cannot be read as that
 // description is not passed on as it came: it might carry far more.
 func newInfoProxy(socketPath string) *httputil.ReverseProxy {
+	return newReducedProxy(socketPath, maxInfo, onlyCapacity, "unreadable host information")
+}
+
+// maxDisk bounds what is read of the daemon's account of its disk use. It is
+// larger than the host's description because it lists every image, container,
+// volume and cache record the host has.
+const maxDisk = 16 << 20
+
+// newDiskProxy forwards the daemon's account of the disk it uses cut down to
+// sizes.
+func newDiskProxy(socketPath string) *httputil.ReverseProxy {
+	return newReducedProxy(socketPath, maxDisk, onlySizes, "unreadable disk usage")
+}
+
+// newReducedProxy forwards a read-only answer after `reduce` has cut it down to
+// what leaves this machine. An answer that is too long or that `reduce` cannot
+// read is not passed on as it came: it might carry far more.
+func newReducedProxy(socketPath string, limit int, reduce func([]byte) ([]byte, error), unreadable string) *httputil.ReverseProxy {
 	proxy := newDockerProxy(socketPath)
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		if resp.StatusCode != http.StatusOK {
 			return nil
 		}
-		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxInfo+1))
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 		resp.Body.Close()
-		if err != nil || len(raw) > maxInfo {
+		if err != nil || len(raw) > limit {
 			return errUnreadableInfo
 		}
-		out, err := onlyCapacity(raw)
+		out, err := reduce(raw)
 		if err != nil {
 			return errUnreadableInfo
 		}
@@ -251,12 +274,44 @@ func newInfoProxy(socketPath string) *httputil.ReverseProxy {
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		log.Printf("docker proxy error: %v", err)
 		if errors.Is(err, errUnreadableInfo) {
-			writeJSONError(w, http.StatusBadGateway, "unreadable host information")
+			writeJSONError(w, http.StatusBadGateway, unreadable)
 			return
 		}
 		writeJSONError(w, http.StatusBadGateway, "docker unreachable")
 	}
 	return proxy
+}
+
+// onlySizes keeps, from the daemon's account of its disk use, the sizes and
+// the counts that say what is in use — and nothing that names anything.
+func onlySizes(raw []byte) ([]byte, error) {
+	type usage struct {
+		Size     int64 `json:"Size"`
+		RefCount int64 `json:"RefCount"`
+	}
+	var in struct {
+		LayersSize int64 `json:"LayersSize"`
+		Images     []struct {
+			Size       int64 `json:"Size"`
+			SharedSize int64 `json:"SharedSize"`
+			Containers int64 `json:"Containers"`
+		} `json:"Images"`
+		Containers []struct {
+			SizeRw int64  `json:"SizeRw"`
+			State  string `json:"State"`
+		} `json:"Containers"`
+		Volumes []struct {
+			UsageData *usage `json:"UsageData"`
+		} `json:"Volumes"`
+		BuildCache []struct {
+			Size  int64 `json:"Size"`
+			InUse bool  `json:"InUse"`
+		} `json:"BuildCache"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, err
+	}
+	return json.Marshal(in)
 }
 
 // onlyCapacity keeps NCPU and MemTotal of the daemon's answer, and nothing else.

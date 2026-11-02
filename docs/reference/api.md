@@ -1,6 +1,6 @@
 # API reference
 
-The agent answers eight calls and a health check. Everything it forwards, it forwards to Docker's own API and returns Docker's answer — unchanged, except that a container's details leave without the values of its environment variables and the host's description leaves as its processors and memory only; everything else it refuses itself.
+The agent answers nine calls and a health check. Everything it forwards, it forwards to Docker's own API and returns Docker's answer — unchanged, except that a container's details leave without the values of its environment variables and the host's description leaves as its processors and memory only, the account of Docker's disk use leaves as sizes and counts without a single name or path; everything else it refuses itself.
 
 ## The calls
 
@@ -14,6 +14,7 @@ The agent answers eight calls and a health check. Everything it forwards, it for
 | `POST` | `/containers/{id}/stop` | Stops a container. | none |
 | `POST` | `/containers/{id}/restart` | Restarts a container. | none |
 | `GET` | `/info` | Reads how big the host is: its processors and its memory, and nothing else of Docker's answer. | none |
+| `GET` | `/system/df` | Reads how much disk Docker uses: the size of its images, containers, volumes and build cache, and which of them nothing uses. Names, tags and paths are dropped. It can take several seconds on a host with a lot of data. | none |
 | `GET` | `/health` | Says the agent is serving, and which version it is. | none |
 
 `{id}` is a container ID or a container name.
@@ -28,7 +29,7 @@ Every request except `/health` carries the token:
 Authorization: Bearer <your token>
 ```
 
-The scheme has to be `Bearer`; its letter case does not matter. The token is compared in constant time. A missing or wrong token gets `401` on **every** route, the eight calls and any other path alike, so a caller who has no token cannot tell which routes exist. Once a request passes, the token is removed before it is forwarded: Docker never sees it.
+The scheme has to be `Bearer`; its letter case does not matter. The token is compared in constant time. A missing or wrong token gets `401` on **every** route, the nine calls and any other path alike, so a caller who has no token cannot tell which routes exist. Once a request passes, the token is removed before it is forwarded: Docker never sees it.
 
 ## The query string
 
