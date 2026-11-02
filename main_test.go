@@ -377,7 +377,11 @@ func TestOnlyKnownQueryParametersReachDocker(t *testing.T) {
 	}{
 		{"GET", "/containers/json?all=true&size=true&filters=%7B%7D", "all=true"},
 		{"GET", "/containers/json?size=true", ""},
-		{"GET", "/containers/abc123/stats?one-shot=true&stream=true", "stream=false"},
+		{"GET", "/containers/abc123/stats?one-shot=true&stream=true", "one-shot=true&stream=false"},
+		// Only the one value that makes a reading cheaper goes on; anything else is dropped.
+		{"GET", "/containers/abc123/stats?one-shot=1", "stream=false"},
+		{"GET", "/containers/abc123/stats?one-shot=false&stream=true", "stream=false"},
+		{"GET", "/containers/abc123/stats?size=true", "stream=false"},
 		{"POST", "/containers/abc123/start?detachKeys=ctrl-x", ""},
 		{"POST", "/containers/abc123/stop?t=999999&signal=SIGKILL", ""},
 		{"POST", "/containers/abc123/restart?t=999999", ""},

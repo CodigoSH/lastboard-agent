@@ -107,14 +107,16 @@ func newHandler(token, socketPath string) http.Handler {
 	// list and control containers, never create, delete, or exec into them.
 	//
 	// The query string is part of that surface. Every Lastboard release has
-	// sent `all=true` to the list and `stream=false` to stats, and nothing
-	// else; any other parameter is dropped before the request is forwarded.
+	// sent `all=true` to the list and `stream=false` to stats (with `one-shot=true`
+	// since the Docker page reads a host without waiting for the daemon's second
+	// sample), and nothing else; any other parameter is dropped before the request
+	// is forwarded.
 	// Left open, a leaked token could still ask the daemon to size every
 	// container on disk (`size=true`), hold a stats stream open for ever, or
 	// stop a container with a timeout of days (`t=`).
 	docker := http.NewServeMux()
 	docker.Handle("GET /containers/json", onlyQuery([]string{"all"}, nil, proxy))
-	docker.Handle("GET /containers/{id}/stats", requireValidID(onlyQuery(nil, singleReading, proxy)))
+	docker.Handle("GET /containers/{id}/stats", requireValidID(statsQuery(proxy)))
 	docker.Handle("POST /containers/{id}/start", requireValidID(onlyQuery(nil, nil, proxy)))
 	docker.Handle("POST /containers/{id}/stop", requireValidID(onlyQuery(nil, nil, proxy)))
 	docker.Handle("POST /containers/{id}/restart", requireValidID(onlyQuery(nil, nil, proxy)))
@@ -473,12 +475,27 @@ func requireValidID(next http.Handler) http.Handler {
 	})
 }
 
-// singleReading forces stats to answer once and close.
+// statsQuery forwards a stats request as a single reading, whatever the caller
+// sent, and as a one-shot reading when it asked for exactly that.
 //
 // Docker streams stats forever unless told otherwise, and the server has no
 // WriteTimeout (see main), so a stream would hold its connection for as long
-// as the caller liked. Lastboard only ever asks for one reading.
-var singleReading = map[string]string{"stream": "false"}
+// as the caller liked: stream=false is always set. A one-shot reading is
+// answered at once, where an ordinary one waits for the daemon's next sample; it
+// only ever costs the daemon less, so `true` is passed on and any other value is
+// dropped. A daemon older than API 1.41 does not know the parameter and answers
+// as it always did.
+func statsQuery(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		out := url.Values{"stream": {"false"}}
+		if r.URL.Query().Get("one-shot") == "true" {
+			out.Set("one-shot", "true")
+		}
+		r = r.Clone(r.Context())
+		r.URL.RawQuery = out.Encode()
+		next.ServeHTTP(w, r)
+	})
+}
 
 // onlyQuery forwards the request with the query reduced to the keys in keep,
 // and each key in force set to its value whatever the caller sent.

@@ -36,7 +36,7 @@ The scheme has to be `Bearer`; its letter case does not matter. The token is com
 Only the parameters Lastboard sends reach Docker; every other one is dropped before the request is forwarded.
 
 - **The list** keeps `all` (include stopped containers). Anything else, for example `size=true`, is dropped.
-- **Stats** are always a single reading: the agent sets `stream=false` whatever the caller sent, so a request for a stream still answers once and closes.
+- **Stats** are always a single reading: the agent sets `stream=false` whatever the caller sent, so a request for a stream still answers once and closes. `one-shot=true` is passed on, because the daemon then answers at once instead of waiting for its next sample; any other value of it is dropped.
 - **Details** keep nothing.
 - **Logs** are always a batch, never a stream: the agent sets `follow=0` whatever the caller sent. `tail` is the number of lines from the end, 100 when it is missing and never more than 1000; `since` is a Unix time and is dropped unless it is one; `stdout`, `stderr` and `timestamps` are kept only as `1` or `true`.
 - **Start, stop and restart** keep nothing, so a timeout (`t=`) or a signal on a stop has no effect.
