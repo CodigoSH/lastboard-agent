@@ -29,7 +29,7 @@
 <div align="center">
 
 ![](https://img.shields.io/badge/🔒_Docker_daemon_never_exposed-1a1a2e?style=for-the-badge)
-![](https://img.shields.io/badge/📋_Seven_calls,_nothing_else-1a1a2e?style=for-the-badge)
+![](https://img.shields.io/badge/📋_Nine_calls,_nothing_else-1a1a2e?style=for-the-badge)
 ![](https://img.shields.io/badge/🔑_Token_on_every_request-1a1a2e?style=for-the-badge)
 ![](https://img.shields.io/badge/🐳_One_container,_one_variable-1a1a2e?style=for-the-badge)
 ![](https://img.shields.io/badge/♻️_Stateless-1a1a2e?style=for-the-badge)
@@ -67,9 +67,9 @@ It runs next to Docker on the remote host, reads the local socket, and answers L
 - **List every container** on the host, running or stopped, with its image, state and published ports.
 - **Read CPU and memory** for each one.
 - **Read a container's details and its log**: image, state, ports, mounts, networks and restart policy, and the last lines it wrote. The environment travels as names only: the values never leave the host.
-- **Start, stop and restart** a container from its row in the dashboard.
+- **Start, stop and restart** a container from its panel in the dashboard.
 - **Read the host's size and what Docker holds on disk**: its processors — and its real cores, where the kernel lists them — its memory, and the sizes of Docker's images, volumes and build cache. Sizes and counts only: no names, tags or paths.
-- **Many hosts, one page**: put an agent on each machine and Lastboard lists them together on its Docker page and in its Docker widget, each row naming where it runs.
+- **Many hosts, one page**: put an agent on each machine and Lastboard lists them together on its Docker page and in its Docker widget, each row naming where it runs; a click on a row opens that container's panel.
 
 ### What it refuses
 
@@ -166,7 +166,7 @@ docker run -d --name lastboard-agent --restart unless-stopped -p 2375:2375 \
 5. In **Token**, enter the token you chose.
 6. **Save** the host. The Docker page lists its containers, and every Docker widget can show them too.
 
-Adding hosts and what the Docker page shows are in the [Docker guide](https://codigosh.com/docs/lastboard/docker/overview/); what the widget shows and what you can do from each row is in the [Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/).
+Adding hosts and what the Docker page shows are in the [Docker guide](https://codigosh.com/docs/lastboard/docker/overview/); what the widget shows, and how a click on a row opens a container's panel, is in the [Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/).
 
 ---
 
