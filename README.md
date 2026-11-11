@@ -184,7 +184,7 @@ The image comes straight from our own registry — no proxy and no intermediary 
 
 ## Build
 
-Requires [Go](https://go.dev) 1.27.3 or newer.
+Requires [Go](https://go.dev) 1.27.4 or newer.
 
 ```bash
 go build -o lastboard-agent .     # the agent
