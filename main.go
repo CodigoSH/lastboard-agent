@@ -329,10 +329,6 @@ func onlySizes(raw []byte) ([]byte, error) {
 		Volumes    []volume    `json:"Volumes"`
 		BuildCache []cache     `json:"BuildCache"`
 	}
-	type kind[T any] struct {
-		TotalSize int64 `json:"TotalSize"`
-		Items     []T   `json:"Items"`
-	}
 	var modern struct {
 		ImageUsage       *kind[image]     `json:"ImageUsage"`
 		ImagesUsage      *kind[image]     `json:"ImagesUsage"`
@@ -352,34 +348,46 @@ func onlySizes(raw []byte) ([]byte, error) {
 	// flat reading standing.
 	_ = json.Unmarshal(raw, &modern)
 
-	pick := func(a, b *kind[image]) *kind[image] {
-		if a != nil {
-			return a
-		}
-		return b
-	}
-	if img := pick(modern.ImageUsage, modern.ImagesUsage); img != nil && len(in.Images) == 0 {
-		in.Images = img.Items
-		if in.LayersSize == 0 {
-			in.LayersSize = img.TotalSize
+	// The old keys win when they hold anything: an engine that sends both has
+	// copied one into the other.
+	if len(in.Images) == 0 {
+		if img := firstKind(modern.ImageUsage, modern.ImagesUsage); img != nil {
+			in.Images = img.Items
+			if in.LayersSize == 0 {
+				in.LayersSize = img.TotalSize
+			}
 		}
 	}
-	if c := modern.ContainerUsage; c != nil && len(in.Containers) == 0 {
-		in.Containers = c.Items
-	} else if c := modern.ContainersUsage; c != nil && len(in.Containers) == 0 {
-		in.Containers = c.Items
-	}
-	if v := modern.VolumeUsage; v != nil && len(in.Volumes) == 0 {
-		in.Volumes = v.Items
-	} else if v := modern.VolumesUsage; v != nil && len(in.Volumes) == 0 {
-		in.Volumes = v.Items
-	}
-	if b := modern.BuildCacheUsage; b != nil && len(in.BuildCache) == 0 {
-		in.BuildCache = b.Items
-	} else if b := modern.BuildCachesUsage; b != nil && len(in.BuildCache) == 0 {
-		in.BuildCache = b.Items
-	}
+	in.Containers = recordsOf(in.Containers, modern.ContainerUsage, modern.ContainersUsage)
+	in.Volumes = recordsOf(in.Volumes, modern.VolumeUsage, modern.VolumesUsage)
+	in.BuildCache = recordsOf(in.BuildCache, modern.BuildCacheUsage, modern.BuildCachesUsage)
 	return json.Marshal(in)
+}
+
+// kind is one object of the modern shape: its total and, with `verbose`, its records.
+type kind[T any] struct {
+	TotalSize int64 `json:"TotalSize"`
+	Items     []T   `json:"Items"`
+}
+
+// firstKind is the singular spelling of a kind when the engine used it, else the plural.
+func firstKind[T any](singular, plural *kind[T]) *kind[T] {
+	if singular != nil {
+		return singular
+	}
+	return plural
+}
+
+// recordsOf is what a kind holds: the flat list when the engine sent one,
+// else the records under whichever spelling of the modern shape it used.
+func recordsOf[T any](flat []T, singular, plural *kind[T]) []T {
+	if len(flat) > 0 {
+		return flat
+	}
+	if k := firstKind(singular, plural); k != nil {
+		return k.Items
+	}
+	return flat
 }
 
 // cpuInfoPath is where the kernel lists the processors it sees. A variable so

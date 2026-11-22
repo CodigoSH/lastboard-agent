@@ -266,6 +266,52 @@ func TestDiskUsageInTheModernShapeLeavesAsTheOldOne(t *testing.T) {
 	}
 }
 
+// onlySizes reads a kind from the old keys, from the modern object in either
+// spelling, or not at all; the old keys win when they hold anything, and the
+// singular spelling wins over the plural.
+func TestOnlySizesPicksTheRightSpellingOfEachKind(t *testing.T) {
+	type out struct {
+		LayersSize int64
+		Images     []struct{ Size int64 }
+		Containers []struct{ SizeRw int64 }
+		Volumes    []struct{ UsageData struct{ Size int64 } }
+		BuildCache []struct{ Size int64 }
+	}
+	read := func(in string) out {
+		t.Helper()
+		raw, err := onlySizes([]byte(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var o out
+		if err := json.Unmarshal(raw, &o); err != nil {
+			t.Fatalf("%v: %s", err, raw)
+		}
+		return o
+	}
+
+	plural := read(`{"ImagesUsage":{"TotalSize":900,"Items":[{"Size":900}]},"ContainersUsage":{"Items":[{"SizeRw":7}]},"VolumesUsage":{"Items":[{"UsageData":{"Size":8}}]},"BuildCachesUsage":{"Items":[{"Size":9}]}}`)
+	if plural.LayersSize != 900 || len(plural.Images) != 1 || len(plural.Containers) != 1 || plural.Containers[0].SizeRw != 7 ||
+		len(plural.Volumes) != 1 || plural.Volumes[0].UsageData.Size != 8 || len(plural.BuildCache) != 1 || plural.BuildCache[0].Size != 9 {
+		t.Errorf("the plural spelling was not read: %+v", plural)
+	}
+
+	both := read(`{"ContainerUsage":{"Items":[{"SizeRw":1}]},"ContainersUsage":{"Items":[{"SizeRw":2}]}}`)
+	if len(both.Containers) != 1 || both.Containers[0].SizeRw != 1 {
+		t.Errorf("the singular must win over the plural: %+v", both.Containers)
+	}
+
+	flat := read(`{"LayersSize":5,"Images":[{"Size":5}],"Containers":[{"SizeRw":3}],"ContainerUsage":{"Items":[{"SizeRw":99}]}}`)
+	if flat.LayersSize != 5 || len(flat.Containers) != 1 || flat.Containers[0].SizeRw != 3 {
+		t.Errorf("the old keys must win when they hold anything: %+v", flat)
+	}
+
+	none := read(`{}`)
+	if none.LayersSize != 0 || len(none.Images) != 0 || len(none.Containers) != 0 || len(none.Volumes) != 0 || len(none.BuildCache) != 0 {
+		t.Errorf("an empty answer must stay empty: %+v", none)
+	}
+}
+
 // Which engine is behind the agent is the one thing the version answer lets out.
 func TestVersionSaysTheEngineAndNothingElse(t *testing.T) {
 	cases := map[string]string{
