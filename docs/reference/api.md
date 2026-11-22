@@ -1,6 +1,6 @@
 # API reference
 
-The agent answers nine calls and a health check. Everything it forwards, it forwards to Docker's own API and returns Docker's answer — unchanged, except that a container's details leave without the values of its environment variables and the host's description leaves as its processors, cores and memory only, the account of Docker's disk use leaves as sizes and counts without a single name or path; everything else it refuses itself.
+The agent answers ten calls and a health check. Everything it forwards, it forwards to Docker's own API and returns Docker's answer — unchanged, except that a container's details leave without the values of its environment variables and the host's description leaves as its processors, cores and memory only, the account of Docker's disk use leaves as sizes and counts without a single name or path; everything else it refuses itself.
 
 ## The calls
 
