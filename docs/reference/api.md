@@ -30,7 +30,7 @@ Every request except `/health` carries the token:
 Authorization: Bearer <your token>
 ```
 
-The scheme has to be `Bearer`; its letter case does not matter. The token is compared in constant time. A missing or wrong token gets `401` on **every** route, the nine calls and any other path alike, so a caller who has no token cannot tell which routes exist. Once a request passes, the token is removed before it is forwarded: Docker never sees it.
+The scheme has to be `Bearer`; its letter case does not matter. The token is compared in constant time. A missing or wrong token gets `401` on **every** route, the ten calls and any other path alike, so a caller who has no token cannot tell which routes exist. Once a request passes, the token is removed before it is forwarded: Docker never sees it.
 
 ## The query string
 
