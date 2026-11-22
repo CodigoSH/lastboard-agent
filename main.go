@@ -140,6 +140,11 @@ func newHandler(token, socketPath string) http.Handler {
 	// points, or the build cache's records.
 	docker.Handle("GET /system/df", onlyQuery(nil, nil, newDiskProxy(socketPath)))
 
+	// Read-only: which engine answers behind this agent and its release, so the
+	// dashboard can say Docker or Podman. The daemon's own answer names the
+	// kernel, the platform and the build; only those two words leave.
+	docker.Handle("GET /version", onlyQuery(nil, nil, newReducedProxy(socketPath, maxInfo, onlyEngine, "unreadable engine version")))
+
 	mux := http.NewServeMux()
 
 	// Health endpoint — public, no auth required. It carries the version so
@@ -286,32 +291,90 @@ func newReducedProxy(socketPath string, limit int, reduce func([]byte) ([]byte, 
 
 // onlySizes keeps, from the daemon's account of its disk use, the sizes and
 // the counts that say what is in use — and nothing that names anything.
+//
+// The account comes in two shapes. The old one is flat (LayersSize, Images,
+// Containers, Volumes, BuildCache); engines from the 1.52 API on, and Podman,
+// answer one object per kind (ImageUsage, ContainerUsage, VolumeUsage,
+// BuildCacheUsage) with the records under Items and leave the old keys empty.
+// Both are read, and what leaves is always the old shape, so the page that
+// reads it has one thing to understand whichever engine is behind this agent.
 func onlySizes(raw []byte) ([]byte, error) {
 	type usage struct {
 		Size     int64 `json:"Size"`
 		RefCount int64 `json:"RefCount"`
 	}
-	var in struct {
-		LayersSize int64 `json:"LayersSize"`
-		Images     []struct {
-			Size       int64 `json:"Size"`
-			SharedSize int64 `json:"SharedSize"`
-			Containers int64 `json:"Containers"`
-		} `json:"Images"`
-		Containers []struct {
-			SizeRw int64  `json:"SizeRw"`
-			State  string `json:"State"`
-		} `json:"Containers"`
-		Volumes []struct {
-			UsageData *usage `json:"UsageData"`
-		} `json:"Volumes"`
-		BuildCache []struct {
-			Size  int64 `json:"Size"`
-			InUse bool  `json:"InUse"`
-		} `json:"BuildCache"`
+	type image struct {
+		Size       int64 `json:"Size"`
+		SharedSize int64 `json:"SharedSize"`
+		Containers int64 `json:"Containers"`
 	}
+	type container struct {
+		SizeRw int64  `json:"SizeRw"`
+		State  string `json:"State"`
+	}
+	type volume struct {
+		UsageData *usage `json:"UsageData"`
+	}
+	type cache struct {
+		Size  int64 `json:"Size"`
+		InUse bool  `json:"InUse"`
+	}
+	type flat struct {
+		LayersSize int64       `json:"LayersSize"`
+		Images     []image     `json:"Images"`
+		Containers []container `json:"Containers"`
+		Volumes    []volume    `json:"Volumes"`
+		BuildCache []cache     `json:"BuildCache"`
+	}
+	type kind[T any] struct {
+		TotalSize int64 `json:"TotalSize"`
+		Items     []T   `json:"Items"`
+	}
+	var modern struct {
+		ImageUsage       *kind[image]     `json:"ImageUsage"`
+		ImagesUsage      *kind[image]     `json:"ImagesUsage"`
+		ContainerUsage   *kind[container] `json:"ContainerUsage"`
+		ContainersUsage  *kind[container] `json:"ContainersUsage"`
+		VolumeUsage      *kind[volume]    `json:"VolumeUsage"`
+		VolumesUsage     *kind[volume]    `json:"VolumesUsage"`
+		BuildCacheUsage  *kind[cache]     `json:"BuildCacheUsage"`
+		BuildCachesUsage *kind[cache]     `json:"BuildCachesUsage"`
+	}
+
+	var in flat
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil, err
+	}
+	// The same bytes read again for the other shape. A failure here leaves the
+	// flat reading standing.
+	_ = json.Unmarshal(raw, &modern)
+
+	pick := func(a, b *kind[image]) *kind[image] {
+		if a != nil {
+			return a
+		}
+		return b
+	}
+	if img := pick(modern.ImageUsage, modern.ImagesUsage); img != nil && len(in.Images) == 0 {
+		in.Images = img.Items
+		if in.LayersSize == 0 {
+			in.LayersSize = img.TotalSize
+		}
+	}
+	if c := modern.ContainerUsage; c != nil && len(in.Containers) == 0 {
+		in.Containers = c.Items
+	} else if c := modern.ContainersUsage; c != nil && len(in.Containers) == 0 {
+		in.Containers = c.Items
+	}
+	if v := modern.VolumeUsage; v != nil && len(in.Volumes) == 0 {
+		in.Volumes = v.Items
+	} else if v := modern.VolumesUsage; v != nil && len(in.Volumes) == 0 {
+		in.Volumes = v.Items
+	}
+	if b := modern.BuildCacheUsage; b != nil && len(in.BuildCache) == 0 {
+		in.BuildCache = b.Items
+	} else if b := modern.BuildCachesUsage; b != nil && len(in.BuildCache) == 0 {
+		in.BuildCache = b.Items
 	}
 	return json.Marshal(in)
 }
@@ -372,6 +435,35 @@ func onlyCapacity(raw []byte) ([]byte, error) {
 	// Never the daemon's own word: only what this host's kernel says.
 	info.PhysicalCores = physicalCores()
 	return json.Marshal(info)
+}
+
+// onlyEngine keeps which engine this is and its release. Podman names itself in
+// the components it lists ("Podman Engine"); anything else is taken for Docker,
+// which is what an engine that says nothing of the kind is.
+func onlyEngine(raw []byte) ([]byte, error) {
+	var in struct {
+		Version    string `json:"Version"`
+		Components []struct {
+			Name string `json:"Name"`
+		} `json:"Components"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, err
+	}
+	engine := "docker"
+	for _, c := range in.Components {
+		if strings.Contains(strings.ToLower(c.Name), "podman") {
+			engine = "podman"
+		}
+	}
+	version := in.Version
+	if len(version) > 40 {
+		version = version[:40]
+	}
+	return json.Marshal(struct {
+		Engine  string `json:"engine"`
+		Version string `json:"version"`
+	}{engine, version})
 }
 
 // withoutEnvValues rewrites Config.Env from ["NAME=value", …] to ["NAME", …].

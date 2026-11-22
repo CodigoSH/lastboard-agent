@@ -14,7 +14,8 @@ The agent answers nine calls and a health check. Everything it forwards, it forw
 | `POST` | `/containers/{id}/stop` | Stops a container. | none |
 | `POST` | `/containers/{id}/restart` | Restarts a container. | none |
 | `GET` | `/info` | Reads how big the host is: its processors (`NCPU`, threads included) and its memory (`MemTotal`), plus `PhysicalCores` — its real cores, read from the host's own processor list and left out where the kernel does not give one — and nothing else of Docker's answer. | none |
-| `GET` | `/system/df` | Reads how much disk Docker uses: the size of its images, containers, volumes and build cache, and which of them nothing uses. Names, tags and paths are dropped. It can take several seconds on a host with a lot of data. | none |
+| `GET` | `/system/df` | Reads how much disk Docker uses: the size of its images, containers, volumes and build cache, and which of them nothing uses. Names, tags and paths are dropped. It reads the account Docker and Podman give, in either of the shapes they use, and answers in one. It can take several seconds on a host with a lot of data. | none |
+| `GET` | `/version` | Says which engine runs behind the agent (`docker` or `podman`) and its release, so the dashboard can name it. Nothing else of the daemon's answer leaves. | none |
 | `GET` | `/health` | Says the agent is serving, and which version it is. | none |
 
 `{id}` is a container ID or a container name.

@@ -220,6 +220,78 @@ func TestDiskUsageLeavesOnlySizes(t *testing.T) {
 	}
 }
 
+// The shape newer engines and Podman answer — one object per kind, the records
+// under Items — leaves as the old one, with the same sizes and still no names.
+func TestDiskUsageInTheModernShapeLeavesAsTheOldOne(t *testing.T) {
+	agent, docker := newAgent(t)
+	docker.answer("/system/df", `{"ImageUsage":{"TotalSize":5000,"Items":[{"Id":"sha256:SECRETID","RepoTags":["registry.corp/app:1"],"Size":3000,"SharedSize":1000,"Containers":0}]},"ContainerUsage":{"Items":[{"Id":"c1","Names":["/db-secret"],"SizeRw":40,"State":"exited"}]},"VolumeUsage":{"Items":[{"Name":"vol-secret","UsageData":{"Size":700,"RefCount":0}}]},"BuildCacheUsage":{"Items":[{"ID":"bc1","Description":"RUN secret","Size":90,"InUse":false}]}}`)
+
+	req, _ := http.NewRequest("GET", agent.URL+"/system/df", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var got struct {
+		LayersSize int64
+		Images     []struct{ Size, SharedSize, Containers int64 }
+		Containers []struct {
+			SizeRw int64
+			State  string
+		}
+		Volumes []struct {
+			UsageData struct{ Size, RefCount int64 }
+		}
+		BuildCache []struct {
+			Size  int64
+			InUse bool
+		}
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("answer is not JSON: %v: %s", err, body)
+	}
+	if got.LayersSize != 5000 || len(got.Images) != 1 || got.Images[0].Size != 3000 || got.Images[0].SharedSize != 1000 ||
+		len(got.Containers) != 1 || got.Containers[0].SizeRw != 40 || got.Containers[0].State != "exited" ||
+		len(got.Volumes) != 1 || got.Volumes[0].UsageData.Size != 700 ||
+		len(got.BuildCache) != 1 || got.BuildCache[0].Size != 90 {
+		t.Errorf("sizes lost: %s", body)
+	}
+	for _, leak := range []string{"SECRET", "secret", "registry.corp", "RUN"} {
+		if strings.Contains(string(body), leak) {
+			t.Errorf("the answer carries %q", leak)
+		}
+	}
+}
+
+// Which engine is behind the agent is the one thing the version answer lets out.
+func TestVersionSaysTheEngineAndNothingElse(t *testing.T) {
+	cases := map[string]string{
+		`{"Version":"6.2.0","ApiVersion":"1.44","KernelVersion":"6.1-secret","Os":"linux","Components":[{"Name":"Podman Engine","Version":"6.2.0"},{"Name":"Conmon"}]}`:             "podman",
+		`{"Version":"28.5.2","ApiVersion":"1.51","KernelVersion":"6.1-secret","Platform":{"Name":"Docker Engine - Community"},"Components":[{"Name":"Engine","Version":"28.5.2"}]}`: "docker",
+	}
+	for body, want := range cases {
+		agent, docker := newAgent(t)
+		docker.answer("/version", body)
+		req, _ := http.NewRequest("GET", agent.URL+"/version", nil)
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var got struct{ Engine, Version string }
+		if err := json.Unmarshal(out, &got); err != nil || got.Engine != want || got.Version == "" {
+			t.Errorf("%s: got %s (%v), want engine %s", want, out, err, want)
+		}
+		if strings.Contains(string(out), "secret") || strings.Contains(string(out), "Kernel") {
+			t.Errorf("the answer carries more than the engine: %s", out)
+		}
+	}
+}
+
 // An account of disk use that cannot be read is not passed on as it came.
 func TestUnreadableDiskUsageIsNotForwarded(t *testing.T) {
 	agent, docker := newAgent(t)
@@ -272,7 +344,6 @@ func TestEverythingElseIsRefused(t *testing.T) {
 		{"GET", "/containers/abc123/top"},
 		{"GET", "/images/json"},
 		{"POST", "/images/create"},
-		{"GET", "/version"},
 		{"GET", "/v1.47/containers/json"},
 		{"GET", "/containers/../images/json"},
 	}
