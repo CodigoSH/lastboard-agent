@@ -215,8 +215,9 @@ func TestDiskUsageLeavesOnlySizes(t *testing.T) {
 			t.Errorf("the answer carries %q", leak)
 		}
 	}
-	if q := docker.received()[0].URL.RawQuery; q != "" {
-		t.Errorf("the query reached the daemon: %q", q)
+	// The client's own query is dropped; the agent asks for the records itself.
+	if q := docker.received()[0].URL.RawQuery; q != "verbose=true" {
+		t.Errorf("the daemon was asked with %q, want only verbose=true", q)
 	}
 }
 

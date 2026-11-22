@@ -138,7 +138,10 @@ func newHandler(token, socketPath string) http.Handler {
 	// Read-only, for the overview: how much disk Docker itself uses. Only the
 	// sizes leave — not the image names and tags, the volume names and mount
 	// points, or the build cache's records.
-	docker.Handle("GET /system/df", onlyQuery(nil, nil, newDiskProxy(socketPath)))
+	// An engine of API 1.52 or later answers without its records unless asked
+	// for them, and the sizes are in the records. The client's own query is
+	// dropped; this one is the agent's.
+	docker.Handle("GET /system/df", onlyQuery(nil, map[string]string{"verbose": "true"}, newDiskProxy(socketPath)))
 
 	// Read-only: which engine answers behind this agent and its release, so the
 	// dashboard can say Docker or Podman. The daemon's own answer names the
