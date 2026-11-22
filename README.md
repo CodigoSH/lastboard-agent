@@ -55,7 +55,7 @@ It runs next to Docker on the remote host, reads the local socket, and answers L
 | **Setup** | One environment variable: `TOKEN` |
 | **Talks to** | The local Docker socket, and nothing else |
 | **Dependencies** | None beyond the Go standard library |
-| **Licence** | Apache-2.0 |
+| **License** | Apache-2.0 |
 | **Telemetry** | None. Ever |
 
 ---

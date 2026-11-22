@@ -28,7 +28,7 @@ Three things to know before you start it:
   openssl rand -hex 32
   ```
 
-  The placeholder above is one of the values the agent recognises: it starts, but its log warns that anyone who has read this page can control your containers.
+  The placeholder above is one of the values the agent recognizes: it starts, but its log warns that anyone who has read this page can control your containers.
 - **`ports`**: change the left side of `2375:2375` to publish a different port. The right side has to match `PORT` if you override it.
 - **`volumes`**: `/var/run/docker.sock` is how the agent reaches Docker, and it is the only thing it touches. The `:ro` is good practice but **does not limit what can be done through the socket** — what limits it is the agent's own allowlist (see [API reference](../reference/api.md)).
 
