@@ -134,16 +134,14 @@ jobs:
           echo "Release ID: $RELEASE_ID"
           echo "Release $VERSION published."
 
-  # The site reads the latest release from this repository's API at build
-  # time, so it is rebuilt once the release exists — and only if it was
-  # published. Dispatched rather than done here, so how the site is rebuilt
-  # lives in one place: site-rebuild.yml.
-  trigger-site-rebuild:
-    name: Rebuild the website
-    needs: release
-    runs-on: ubuntu-latest
-    container: node:24-trixie
-    steps:
+      # The site reads the latest release from this repository's API at build time, so it is
+      # rebuilt once the release exists — and only if it was published. Dispatched rather than
+      # done here, so how the site is rebuilt lives in one place: site-rebuild.yml.
+      #
+      # A step of the release and not a job of its own. It is four seconds of curl, and a job of its
+      # own is a slot of the runner, which has one: it went to the back of a queue of everybody
+      # else's runs and the release read as running for as long as that took. A step runs only if
+      # every step before it passed, which is all the `needs: release` it replaces was for.
       - name: Dispatch the website rebuild
         env:
           CI_TOKEN: ${{ secrets.CI_TOKEN }}
