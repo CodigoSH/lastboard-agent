@@ -243,7 +243,7 @@ jobs:
           CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             -H "Authorization: token $CI_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"ref":"main"}' \
+            -d '{"ref":"main","inputs":{"requested_at":"'"$(date +%s)"'"}}' \
             "${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}/actions/workflows/site-rebuild.yml/dispatches")
           echo "Website rebuild dispatch HTTP $CODE"
           [ "$CODE" = "204" ] || { echo "Website rebuild dispatch failed (HTTP $CODE)"; exit 1; }
