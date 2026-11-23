@@ -16,7 +16,7 @@ jobs:
     container: node:24-trixie
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The notes are built from the commits since the previous tag. The
           # default checkout is one commit deep with only this tag, so the
@@ -82,7 +82,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: git.codigosh.com/${{ steps.vars.outputs.image }}
           # `latest` is decided by the step above and nowhere else: the action's
