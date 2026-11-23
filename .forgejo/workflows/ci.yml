@@ -85,8 +85,10 @@ jobs:
       # was ninety seconds of every push on this runner. scripts/release.sh runs it before a
       # release is tagged, which is when it has to hold. -count=1 so a cached pass proves nothing
       # about a change to docs/, which these tests read from disk.
+      # -timeout 10m: Go's own default, spelled out so a package that hangs dies in a named test
+      # instead of at the end of the job.
       - name: Go tests
-        run: go test -count=1 -cover ./...
+        run: go test -count=1 -timeout 10m -cover ./...
 
       # Blocking: fails when the code calls a known-vulnerable symbol, most
       # likely in the standard library — the fix is then a Go patch release.
