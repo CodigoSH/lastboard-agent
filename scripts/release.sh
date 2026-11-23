@@ -162,6 +162,11 @@ else
     [ -z "$UNFORMATTED" ] || die "gofmt reports unformatted files:"$'\n'"$UNFORMATTED"
     echo "   ✅ gofmt"
 
+    # The CI fails a go.mod that is not tidy, and it would fail on the tagged
+    # commit, after the release is out. -diff writes nothing.
+    TIDY=$(go mod tidy -diff 2>&1) || die "go.mod or go.sum is not tidy (run go mod tidy):"$'\n'"$TIDY"
+    echo "   ✅ go mod tidy"
+
     go vet ./... || die "go vet failed."
     echo "   ✅ go vet"
 
