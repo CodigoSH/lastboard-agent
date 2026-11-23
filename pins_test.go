@@ -148,7 +148,6 @@ func TestNothingIsPinnedToLatest(t *testing.T) {
 	files := []string{
 		"Dockerfile",
 		".forgejo/workflows/release.yml",
-		".forgejo/workflows/docker-release.yml",
 		".forgejo/workflows/ci.yml",
 		".forgejo/workflows/site-rebuild.yml",
 		"scripts/release.sh",
@@ -193,7 +192,7 @@ func TestReleaseBuildsStampTheVersion(t *testing.T) {
 	}{
 		{"main.go", regexp.MustCompile(`(?m)^var version = "dev"$`)},
 		{"Dockerfile", regexp.MustCompile(`(?m)^[^#]*-X main\.version=\$\{VERSION\}`)},
-		{".forgejo/workflows/docker-release.yml", regexp.MustCompile(`(?m)^[^#]*--build-arg VERSION="\$\{GITHUB_REF_NAME\}"`)},
+		{".forgejo/workflows/release.yml", regexp.MustCompile(`(?m)^[^#]*--build-arg VERSION="\$\{GITHUB_REF_NAME\}"`)},
 	}
 	for _, s := range stamps {
 		body, err := os.ReadFile(s.file)
