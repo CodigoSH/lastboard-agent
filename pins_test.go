@@ -210,28 +210,31 @@ func TestReleaseBuildsStampTheVersion(t *testing.T) {
 // runs on a push to itself or when dispatched, so if release.yml stops
 // dispatching it, nothing fails: the site just goes on advertising the
 // previous version.
+//
+// The dispatch is the last step of the release job, after the step that
+// publishes it, and not a job of its own: a job of its own is a slot of a runner
+// that has one, and queues behind every other project's runs. A step only runs
+// when every step before it passed, so it still happens only for a release that
+// shipped.
 func TestReleaseDispatchesTheSiteRebuild(t *testing.T) {
 	body, err := os.ReadFile(".forgejo/workflows/release.yml")
 	if err != nil {
 		t.Fatalf("read release.yml: %v", err)
 	}
-	var job strings.Builder
-	in := false
-	for _, line := range strings.Split(string(body), "\n") {
-		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   ") && strings.HasSuffix(line, ":") {
-			in = line == "  trigger-site-rebuild:"
-		}
-		if in && !strings.HasPrefix(strings.TrimSpace(line), "#") {
-			job.WriteString(line + "\n")
-		}
+	text := string(body)
+	if strings.Contains(text, "\n  trigger-site-rebuild:") {
+		t.Error("release.yml has the dispatch as a job of its own again: it waits in the runner's queue behind every other run")
 	}
-	for _, want := range []string{
-		"needs: release",
-		"/actions/workflows/site-rebuild.yml/dispatches",
-	} {
-		if !strings.Contains(job.String(), want) {
-			t.Errorf("release.yml's trigger-site-rebuild job lacks %q", want)
-		}
+	publish := strings.Index(text, "- name: Create or Update Release")
+	dispatch := strings.Index(text, "- name: Dispatch the website rebuild")
+	if publish < 0 || dispatch < 0 {
+		t.Fatalf("release.yml lacks the publishing step (%d) or the dispatch step (%d)", publish, dispatch)
+	}
+	if dispatch < publish {
+		t.Error("release.yml dispatches the website rebuild before the release is published: the site would be built without it")
+	}
+	if !strings.Contains(text[dispatch:], "/actions/workflows/site-rebuild.yml/dispatches") {
+		t.Error("release.yml's dispatch step does not call site-rebuild.yml")
 	}
 	if _, err := os.Stat(".forgejo/workflows/site-rebuild.yml"); err != nil {
 		t.Errorf("release.yml dispatches site-rebuild.yml, which does not exist: %v", err)

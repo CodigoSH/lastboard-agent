@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     # Pinned rather than inherited: `ubuntu-latest` is whatever the runner
     # mapped it to the day it registered, which was a Debian from 2021.
-    # This image also carries the C toolchain -race needs.
+    # This image also carries the C toolchain the race detector needs, which scripts/release.sh runs.
     container: node:24-trixie
     env:
       # What is published is built without cgo, and Go keeps a separate build
@@ -31,9 +31,33 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # setup-go's own cache stays off: its key is written with a capital "Linux" when it is saved
+      # and a lower case "linux" when it is looked for, so what one run saves the next never finds.
+      # It saved 133 MB on every run to no use. The cache below has a key written here, in full.
       - uses: actions/setup-go@v7
+        id: setup-go
         with:
           go-version: '1.27.4'
+          cache: false
+
+      # The Go build cache and the module cache, so the dependency graph is compiled once and not
+      # on every push. The key is the Go version plus go.sum and has no commit in it on purpose: a
+      # hit restores and uploads nothing, and the entry is only written again when a dependency or
+      # the toolchain changes (the restore key then starts from the previous entry).
+      - name: Locate the Go caches
+        id: gocache
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: gofmt
         run: |
@@ -57,11 +81,12 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
           "$(go env GOPATH)/bin/staticcheck" ./...
 
-      # -race needs cgo.
+      # The race detector is not run here: it needs cgo and a build of the runtime with it, which
+      # was ninety seconds of every push on this runner. scripts/release.sh runs it before a
+      # release is tagged, which is when it has to hold. -count=1 so a cached pass proves nothing
+      # about a change to docs/, which these tests read from disk.
       - name: Go tests
-        env:
-          CGO_ENABLED: "1"
-        run: go test -count=1 -race -cover ./...
+        run: go test -count=1 -cover ./...
 
       # Blocking: fails when the code calls a known-vulnerable symbol, most
       # likely in the standard library — the fix is then a Go patch release.

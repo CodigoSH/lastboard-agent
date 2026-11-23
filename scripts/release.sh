@@ -182,8 +182,13 @@ else
         die "govulncheck failed. Run 'go run golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION ./...' to see why."
     echo "   ✅ govulncheck"
 
-    go test ./... >/dev/null || die "Go tests failed. Run 'go test ./...' to see why."
-    echo "   ✅ go test"
+    # With the race detector, which the CI no longer runs on every push because it was ninety
+    # seconds of each. It needs cgo, so a C compiler on this machine. -count=1 because some tests
+    # read docs/ from disk and Go's test cache does not track that, so a cached pass could hide a change.
+    command -v gcc >/dev/null || die "The race detector needs a C compiler (gcc) on this machine."
+    CGO_ENABLED=1 go test -count=1 -race -timeout 20m ./... >/dev/null || \
+        die "Go tests failed. Run 'CGO_ENABLED=1 go test -count=1 -race ./...' to see why."
+    echo "   ✅ go test -race"
 fi
 
 # --- 2. Calculate the new version -----------------------------------------
