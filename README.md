@@ -159,12 +159,12 @@ docker run -d --name lastboard-agent --restart unless-stopped -p 2375:2375 \
 
 ## Connecting to Lastboard
 
-1. In Lastboard, open **Settings → Docker**.
+1. In Lastboard, open **Settings → Docker / Podman**.
 2. Click **+ Add New Host**.
-3. Give it a **Name**, and choose **Lastboard Agent** as its **Type**.
+3. Give it a **Name**, pick the engine — **Docker** or **Podman** — and choose **Lastboard Agent** as its **Type**.
 4. In **Host URL**, enter the host and port: `your-server-ip:2375`.
 5. In **Token**, enter the token you chose.
-6. **Save** the host. The Docker page lists its containers, and every Docker widget can show them too.
+6. **Save** the host. The Docker / Podman page lists its containers, and every Docker / Podman widget can show them too.
 
 Adding hosts and what the Docker page shows are in the [Docker guide](https://codigosh.com/docs/lastboard/docker/overview/); what the widget shows, and how a click on a row opens a container's panel, is in the [Docker widget guide](https://codigosh.com/docs/lastboard/widgets/docker/).
 
